@@ -1,0 +1,347 @@
+*&---------------------------------------------------------------------*
+*& Include          ZUTN_SCAT_SEL
+*&---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*& Include          ZUTN_SCAT_SEL
+*&---------------------------------------------------------------------*
+
+*----------------------------------------------------------------------*
+* Tool Name       : SCAT (SAP Cutover Acctivities Tool)
+* Creation Date   : 14/06/2016
+* Transaction     : ZUTSCAT
+* Description     : SAP Cutover Activities and Transport Tool
+*----------------------------------------------------------------------*
+*----------------------------------------------------------------------*
+* Modification History
+*----------------------------------------------------------------------*
+* Author          : Bhavna Singh (BSINGH)
+* Creation Date   : 16-DEC-2016
+* Tag             : BSINGH-16-DEC-2016
+* Feature         : Transport Utility - List of Open Transports
+* Description     : Adding the ability to search via transport
+*                 : description
+*----------------------------------------------------------------------*
+* Author          : VenkatMani.P (VMANIBAB)
+* Creation Date   : 04-APR-2017
+* Tag             : VMANIBAB
+* Feature         : Comparison - Added new Options
+* Description     : Added New Options to Compare more Objects
+*----------------------------------------------------------------------*
+
+* Tables
+*tables: sscrfields.
+
+* TYPE-POOLS
+TYPE-POOLS icon.
+*&---------------------------------------------------------------------*
+*& SELECTION SCREEN DEFINITION
+*&---------------------------------------------------------------------*
+
+*Block for SAP Cutover Activities main options
+SELECTION-SCREEN BEGIN OF BLOCK scatopt WITH FRAME TITLE TEXT-001.
+
+PARAMETERS: p_rfct RADIOBUTTON GROUP opt DEFAULT 'X' MODIF ID opt USER-COMMAND opt, "RFC Connection Test
+            p_comp RADIOBUTTON GROUP opt MODIF ID opt, "Comparisons
+            p_util RADIOBUTTON GROUP opt MODIF ID opt, "Transport Utility
+            p_cchk RADIOBUTTON GROUP opt MODIF ID opt, "Source Code Comparison
+            p_othr RADIOBUTTON GROUP opt MODIF ID opt. "Other Utilities
+
+SELECTION-SCREEN END OF BLOCK scatopt.
+
+* Block for RFC Connection Test
+*SELECTION-SCREEN BEGIN OF BLOCK rfctest WITH FRAME TITLE text-002.
+*
+*SELECTION-SCREEN COMMENT /1(75) text-038 MODIF ID rfc.
+*SELECTION-SCREEN COMMENT /1(75) text-039 MODIF ID rfc.
+*SELECTION-SCREEN SKIP.
+*SELECT-OPTIONS s_rfc FOR wa_rfc-rfcdest NO INTERVALS MODIF ID rfc.
+*
+*SELECTION-SCREEN END OF BLOCK rfctest.
+SELECTION-SCREEN BEGIN OF BLOCK rfctest WITH FRAME TITLE TEXT-002.
+
+SELECTION-SCREEN COMMENT /1(75) TEXT-038 MODIF ID rfc.
+SELECTION-SCREEN COMMENT /1(75) TEXT-039 MODIF ID rfc.
+
+SELECT-OPTIONS s_rfc FOR wa_rfc-rfcdest NO INTERVALS MODIF ID rfc.
+
+SELECTION-SCREEN END OF BLOCK rfctest.
+
+** Block for Comparison
+*SELECTION-SCREEN BEGIN OF BLOCK comparison WITH FRAME TITLE text-010.
+** Block for Comparison Options
+*  SELECTION-SCREEN COMMENT /1(75) text-040 MODIF ID com.
+*  SELECTION-SCREEN COMMENT /1(75) text-041 MODIF ID com.
+*SELECTION-SCREEN BEGIN OF BLOCK compare WITH FRAME TITLE text-003.
+SELECTION-SCREEN BEGIN OF BLOCK comparison WITH FRAME TITLE TEXT-010.
+*Comparison Options
+SELECTION-SCREEN COMMENT /1(75) TEXT-040 MODIF ID com.
+SELECTION-SCREEN COMMENT /1(75) TEXT-041 MODIF ID com.
+SELECTION-SCREEN BEGIN OF BLOCK compmain WITH FRAME TITLE TEXT-003.
+
+PARAMETERS: p_gen RADIOBUTTON GROUP cmn DEFAULT 'X' MODIF ID cmn USER-COMMAND cmn1,
+            p_int RADIOBUTTON GROUP cmn MODIF ID cmn.
+*            p_wrf  RADIOBUTTON GROUP cmn MODIF ID cmn.
+SELECTION-SCREEN END OF BLOCK compmain.
+
+
+*Generic Comparisons
+SELECTION-SCREEN BEGIN OF BLOCK gencomp WITH FRAME TITLE TEXT-070.
+PARAMETERS: p_tab  RADIOBUTTON GROUP com DEFAULT 'X' MODIF ID com USER-COMMAND cmd1,
+            p_grap RADIOBUTTON GROUP com MODIF ID com,
+            p_var  RADIOBUTTON GROUP com MODIF ID com,
+            p_text RADIOBUTTON GROUP com MODIF ID com,
+            p_page RADIOBUTTON GROUP com MODIF ID com,
+            p_extc RADIOBUTTON GROUP com MODIF ID com,
+            p_mesg RADIOBUTTON GROUP com MODIF ID com,
+            p_aelc RADIOBUTTON GROUP com MODIF ID com,
+*{          Start of VMANIBAB
+            p_port RADIOBUTTON GROUP com MODIF ID com,    "++04/04/2017
+            p_font RADIOBUTTON GROUP com MODIF ID com,    "++04/05/2017
+            p_barc RADIOBUTTON GROUP com MODIF ID com,    "++04/05/2017
+            p_chpt RADIOBUTTON GROUP com MODIF ID com,    "++04/05/2017
+            p_vofm RADIOBUTTON GROUP com MODIF ID com.    "++04/10/2017
+*           End of VMANIBAB }
+SELECTION-SCREEN END OF BLOCK gencomp.
+
+*Interface Comparisons
+SELECTION-SCREEN BEGIN OF BLOCK intfcomp WITH FRAME TITLE TEXT-071.
+
+PARAMETERS: p_pprf RADIOBUTTON GROUP int DEFAULT 'X' MODIF ID int USER-COMMAND int1,
+            p_dimo RADIOBUTTON GROUP int MODIF ID int.
+
+SELECTION-SCREEN END OF BLOCK intfcomp.
+
+
+*Workflow Comparison
+*SELECTION-SCREEN BEGIN OF BLOCK wfcomp WITH FRAME TITLE text-072.
+*    PARAMETERS: p_aelc RADIOBUTTON GROUP wf MODIF ID wf USER-COMMAND wf1.
+*SELECTION-SCREEN END OF BLOCK wfcomp.
+
+* Block for Table Comparison Option
+
+*SELECTION-SCREEN BEGIN OF BLOCK tabcp WITH FRAME TITLE text-005.
+*
+*SELECTION-SCREEN COMMENT /1(75) text-042 MODIF ID tab.
+*SELECTION-SCREEN COMMENT /1(75) text-043 MODIF ID tab.
+*SELECTION-SCREEN COMMENT /1(75) text-044 MODIF ID tab.
+*SELECTION-SCREEN SKIP.
+*
+*SELECTION-SCREEN COMMENT /1(44) text-006 MODIF ID tab.
+*
+*PARAMETERS: p_tabnm TYPE tabname16 MODIF ID tab,
+*            p_rrfc  TYPE rfcdes-rfcdest MODIF ID tab.
+*
+*SELECTION-SCREEN END OF BLOCK tabcp.
+SELECTION-SCREEN BEGIN OF BLOCK tabcp WITH FRAME TITLE TEXT-005.
+
+SELECTION-SCREEN COMMENT /1(44) TEXT-006 MODIF ID tab.
+
+PARAMETERS: p_tabnm TYPE tabname16 MODIF ID tab,
+            p_rrfc  TYPE rfcdes-rfcdest MODIF ID tab VISIBLE LENGTH 19.
+
+SELECTION-SCREEN END OF BLOCK tabcp.
+
+* Block for Port Comparison Option
+
+*selection-screen begin of block port with frame title text-007.
+*
+*selection-screen comment /1(44) text-008 modif id prt.
+*
+*parameters: p_trfcp radiobutton group grp2 default 'X' modif id prt
+*                                                       user-command cmd2,
+*            p_filep radiobutton group grp2 modif id prt,
+*            p_edip  radiobutton group grp2 modif id prt.
+*
+*selection-screen skip.
+*
+*parameters: p_srfc  type rfcdes-rfcdest modif id prt,
+*            p_trfc  type rfcdes-rfcdest modif id prt.
+*
+*selection-screen end of block port.
+
+* Block for Custom Report Variant/Standard Text/Page Formats/Graphics/Distribution Model Comparison Option
+
+SELECTION-SCREEN BEGIN OF BLOCK comp WITH FRAME TITLE TEXT-006.
+*SELECTION-SCREEN COMMENT /1(75) text-045 MODIF ID cop.
+*SELECTION-SCREEN COMMENT /1(75) text-046 MODIF ID cop.
+*SELECTION-SCREEN SKIP.
+
+*  CASE 'X'.
+*    WHEN p_var.
+*      SELECTION-SCREEN COMMENT /1(75) text-045 MODIF ID var.
+*      SELECTION-SCREEN COMMENT /1(75) text-046 MODIF ID var.
+*      SELECTION-SCREEN SKIP.
+*    WHEN p_grap.
+*      SELECTION-SCREEN COMMENT /1(75) text-047 MODIF ID grp.
+*      SELECTION-SCREEN COMMENT /1(75) text-048 MODIF ID grp.
+*      SELECTION-SCREEN SKIP.
+*
+*    WHEN OTHERS.
+*  ENDCASE.
+
+PARAMETERS: p_scrfc TYPE rfcdes-rfcdest MODIF ID cop VISIBLE LENGTH 19,
+            p_tcrfc TYPE rfcdes-rfcdest MODIF ID cop VISIBLE LENGTH 19.
+
+SELECTION-SCREEN END OF BLOCK comp.
+
+
+
+* Block for Partner Profile Comparison Option
+
+SELECTION-SCREEN BEGIN OF BLOCK partner WITH FRAME TITLE TEXT-009.
+
+PARAMETERS: p_outb   RADIOBUTTON GROUP pprf DEFAULT 'X' MODIF ID ppf USER-COMMAND ppf,
+            p_inb    RADIOBUTTON GROUP pprf MODIF ID ppf,
+            p_sprfc  TYPE rfcdes-rfcdest MODIF ID ppf VISIBLE LENGTH 19,
+            p_tprfc  TYPE rfcdes-rfcdest MODIF ID ppf VISIBLE LENGTH 19,
+            p_psprfc TYPE rfcdes-rfcdest MODIF ID ppf VISIBLE LENGTH 19,
+            p_ptprfc TYPE rfcdes-rfcdest MODIF ID ppf VISIBLE LENGTH 19.
+
+SELECTION-SCREEN END OF BLOCK partner.
+
+SELECTION-SCREEN END OF BLOCK comparison.
+
+*Block for Transport Utility
+SELECTION-SCREEN BEGIN OF BLOCK tranutil WITH FRAME TITLE TEXT-011.
+*Block for Transport Utility Options
+SELECTION-SCREEN BEGIN OF BLOCK tranutilopt WITH FRAME TITLE TEXT-012.
+PARAMETERS: p_sort RADIOBUTTON GROUP tul DEFAULT 'X' MODIF ID tul USER-COMMAND tul,
+            p_lopt RADIOBUTTON GROUP tul MODIF ID tul,
+*            p_dqtr radiobutton group tul modif id tul,
+            p_dqob RADIOBUTTON GROUP tul MODIF ID tul,
+            p_ddev RADIOBUTTON GROUP tul MODIF ID tul.
+SELECTION-SCREEN END OF BLOCK tranutilopt.
+
+
+*Block for Status of Released Transports
+SELECTION-SCREEN BEGIN OF BLOCK relstat WITH FRAME TITLE TEXT-013.
+
+SELECT-OPTIONS: s_owner FOR  wa_e070-as4user NO INTERVALS MODIF ID srt,
+                s_tran  FOR  wa_e070-trkorr  NO INTERVALS MODIF ID srt,
+                s_sdate FOR  wa_e070-as4date MODIF ID srt,
+                s_astext FOR wa_e070-as4text NO INTERVALS MODIF ID srt.         "++04/06/2017
+
+PARAMETERS: p_rc  TYPE strw_int4 MODIF ID srt,
+            p_rfc TYPE char3 MODIF ID srt.
+
+SELECTION-SCREEN SKIP.
+
+SELECTION-SCREEN COMMENT /1(40) TEXT-014 FOR FIELD p_clnt MODIF ID srt.
+
+PARAMETERS: p_clnt AS CHECKBOX MODIF ID srt.
+
+SELECTION-SCREEN END OF BLOCK relstat.
+
+*Block for List of Open Transports in Development Environment
+SELECTION-SCREEN BEGIN OF BLOCK opentr WITH FRAME TITLE TEXT-015.
+
+SELECTION-SCREEN SKIP.
+
+SELECT-OPTIONS: s_own    FOR  wa_e070-as4user NO INTERVALS MODIF ID lpt,
+                s_trans  FOR  wa_e070-trkorr  NO INTERVALS MODIF ID lpt.
+
+PARAMETERS: p_desc TYPE e07t-as4text MODIF ID lpt,   " Added By Santosh
+            p_sys  TYPE char3 MODIF ID lpt.
+
+SELECTION-SCREEN END OF BLOCK opentr.
+
+*Block for Dependent Transport Open in Quality  By Transport Number
+
+SELECTION-SCREEN BEGIN OF BLOCK deptr WITH FRAME TITLE TEXT-017.
+
+SELECTION-SCREEN COMMENT /1(75) TEXT-018 MODIF ID dtr.
+SELECTION-SCREEN COMMENT /1(75) TEXT-019 MODIF ID dtr.
+
+SELECTION-SCREEN SKIP.
+
+SELECT-OPTIONS: s_trns FOR wa_e070-trkorr NO INTERVALS MODIF ID dtr.
+
+
+PARAMETERS: p_qual TYPE  rfcdest MODIF ID dtr,
+            p_prod TYPE  rfcdest MODIF ID dtr.
+
+SELECTION-SCREEN END OF BLOCK deptr.
+
+*Block for Dependency By Object
+
+SELECTION-SCREEN BEGIN OF BLOCK trobj WITH FRAME TITLE TEXT-020.
+
+SELECTION-SCREEN COMMENT /1(75) TEXT-018 MODIF ID dob.
+SELECTION-SCREEN COMMENT /1(75) TEXT-033 MODIF ID dob.
+
+SELECTION-SCREEN SKIP.
+
+PARAMETERS: p_obj TYPE  versobjnam    MODIF ID dob,
+            p_qua TYPE rfcdes-rfcdest MODIF ID dob,
+            p_prd TYPE rfcdes-rfcdest MODIF ID dob.
+
+SELECTION-SCREEN END OF BLOCK trobj.
+
+*Block for Dependency in Development
+
+SELECTION-SCREEN BEGIN OF BLOCK depen WITH FRAME TITLE TEXT-021.
+
+PARAMETERS: p_trpt RADIOBUTTON GROUP dep MODIF ID dev DEFAULT 'X' USER-COMMAND dep,
+            p_objt RADIOBUTTON GROUP dep MODIF ID ddp.
+
+PARAMETERS: p_trsp  TYPE  t_e070-trkorr MODIF ID dev,
+            p_sysid TYPE  char3 DEFAULT sy-sysid MODIF ID dev,
+            p_date  TYPE  t_e070-as4date MODIF ID dev,        "++03/31/2017 VMANIBAB
+            p_qua1  TYPE rfcdes-rfcdest MODIF ID dev,         "++03/31/2017 VMANIBAB
+            p_prd1  TYPE rfcdes-rfcdest MODIF ID dev.         "++03/31/2017 VMANIBAB
+
+PARAMETERS: c_rele  AS CHECKBOX DEFAULT 'X' MODIF ID dev,      "++03/31/2017 VMANIBAB
+            c_modif AS CHECKBOX DEFAULT 'X' MODIF ID dev. "++03/31/2017 VMANIBAB
+
+SELECT-OPTIONS: s_obname FOR g_objname NO INTERVALS MODIF ID ddp.
+
+SELECTION-SCREEN END OF BLOCK depen.
+
+SELECTION-SCREEN END OF BLOCK tranutil.
+
+* Start of BSINGH-14-JAN-2017(+)
+
+* Block for Source Code Comparison
+
+SELECTION-SCREEN BEGIN OF BLOCK confl WITH FRAME TITLE TEXT-022.
+
+SELECTION-SCREEN COMMENT /1(75) TEXT-023 MODIF ID cck.
+SELECTION-SCREEN COMMENT /1(75) TEXT-024 MODIF ID cck.
+
+PARAMETERS: p_prog RADIOBUTTON GROUP gr1 DEFAULT 'X' MODIF ID cck USER-COMMAND check , "Program Name
+            p_func RADIOBUTTON GROUP gr1 MODIF ID cck, "Function Module
+            p_fugr RADIOBUTTON GROUP gr1 MODIF ID cck, "Function Group
+            p_clas RADIOBUTTON GROUP gr1 MODIF ID cck. "Class
+
+SELECT-OPTIONS: s_objnam FOR g_objname NO INTERVALS MODIF ID cck.
+
+PARAMETERS : p_pck RADIOBUTTON GROUP gr1 MODIF ID cck.
+
+SELECT-OPTIONS : s_pkg FOR g_devclass NO INTERVALS MODIF ID cck.
+
+SELECTION-SCREEN SKIP 1.
+
+*PARAMETERS: p_vers AS CHECKBOX MODIF ID cck.
+
+*SELECTION-SCREEN SKIP.
+
+PARAMETERS: p_csrfc  LIKE rfcdes-rfcdest MODIF ID cck VISIBLE LENGTH 18.
+SELECT-OPTIONS: s_ctrfc  FOR g_rfc MODIF ID cck NO INTERVALS.
+
+SELECTION-SCREEN END OF BLOCK confl.
+
+* Start of BSINGH-14-JAN-2017(+)
+
+* Block for Other Utilities.
+
+SELECTION-SCREEN BEGIN OF BLOCK othrutil WITH FRAME TITLE TEXT-025.
+
+PARAMETERS: p_tmp  RADIOBUTTON GROUP oth DEFAULT 'X' MODIF ID oth USER-COMMAND othr,
+            p_sttp RADIOBUTTON GROUP oth MODIF ID oth.
+
+SELECTION-SCREEN END OF BLOCK othrutil.
+
+SELECTION-SCREEN: FUNCTION KEY 1,
+                  FUNCTION KEY 2.
+

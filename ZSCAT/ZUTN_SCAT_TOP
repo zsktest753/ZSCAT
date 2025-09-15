@@ -1,0 +1,758 @@
+*&---------------------------------------------------------------------*
+*& Include          ZUTN_SCAT_TOP
+*&---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*& Include          ZUTN_SCAT_TOP
+*&---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*& TYPE POOLS
+*&---------------------------------------------------------------------*
+
+TYPE-POOLS: slis,
+            ctslg,
+            cmpwl,
+            sscr.
+
+TABLES sscrfields. ""BSINGH-02-JAN-2016 (+)
+
+*&---------------------------------------------------------------------*
+*& TABLE TYPES
+*&---------------------------------------------------------------------*
+
+TYPES:
+
+* Start of BSINGH-14-JAN-2017(+)
+
+* For Source Code Utility Comparison
+
+  BEGIN OF t_tadir,
+
+    pgmid    TYPE pgmid,
+    object   TYPE trobjtype,
+    obj_name TYPE sobj_name,
+    author   TYPE responsibl,
+    devclass TYPE devclass,
+
+  END OF t_tadir,
+
+  BEGIN OF t_inactive,
+
+    object   TYPE trobjtype,
+    obj_name TYPE sobj_name,
+
+  END OF t_inactive,
+
+  BEGIN OF t_trdir,
+    name TYPE trdir-name,
+    subc TYPE trdir-subc,
+  END OF t_trdir,
+
+  BEGIN OF t_tadir_class,
+
+    pgmid    TYPE pgmid,
+    object   TYPE trobjtype,
+    obj_name TYPE seoclsname,
+    author   TYPE responsibl,
+    devclass TYPE devclass,
+
+  END OF t_tadir_class,
+
+  BEGIN OF t_tadir_form,
+
+    pgmid    TYPE pgmid,
+    object   TYPE trobjtype,
+    obj_name TYPE tdsfname,
+    author   TYPE responsibl,
+    devclass TYPE devclass,
+
+  END OF t_tadir_form,
+
+  BEGIN OF t_tfdir,
+    funcname TYPE tfdir-funcname,
+    pname    TYPE tfdir-pname,
+  END OF t_tfdir,
+
+  BEGIN OF t_d010,
+    master  TYPE d010inc-master,
+    include TYPE d010inc-include,
+  END OF t_d010,
+
+  BEGIN OF t_class,
+    classname  TYPE seoclsname,
+    methodindx TYPE seomtdindx,
+    methodname TYPE seocpdname,
+  END OF t_class,
+
+
+  BEGIN OF t_conf_output,
+    obj_name     TYPE trobj_name,
+    sub_obj      TYPE trobj_name,
+    prgname      TYPE trobj_name,
+    objdescr(80) TYPE c,
+    objtyp       TYPE e071-object,
+    objtypedesc  TYPE c LENGTH 50,
+    title        TYPE c LENGTH 70,
+    class        TYPE seoclsname,
+    fname        TYPE rs38l_fnam,
+    fngrp        TYPE rs38l_fnam,
+    methname     TYPE seocpdname,
+    pck          TYPE devclass,
+    rfcdest_s    TYPE rfcdest,  "Source RFC
+    sourcetr     TYPE korrnum,
+    sourcevr     TYPE vrsd-versno,
+    sourceauth   TYPE vrsd-author,
+    sourcedt     TYPE sy-datum,
+    rfcdest      TYPE rfcdest,  "Target RFC
+    targettr     TYPE korrnum,
+    targetvr     TYPE vrsd-versno,
+    targetauth   TYPE vrsd-author,
+    targetdt     TYPE sy-datum,
+    conflict     TYPE c LENGTH 40,
+    tx_conflict  TYPE c LENGTH 40,
+    author       TYPE tadir-author,
+    coltab       TYPE slis_t_specialcol_alv,
+    style        TYPE lvc_t_styl, "++FOR DISABLE Hyper Link 03/17/2017
+  END OF t_conf_output,
+
+  BEGIN OF t_rfc_confl,
+    sourcetr       TYPE korrnum,
+    sourcevr       TYPE vrsd-versno,
+    sourcedt       TYPE sy-datum,
+    sourceauth     TYPE vrsd-author,
+    rfcdest        TYPE rfcdest,
+    targettr       TYPE korrnum,
+    targetvr       TYPE vrsd-versno,
+    targetauth     TYPE vrsd-author,
+    targetdt       TYPE sy-datum,
+    conf_flag      TYPE c LENGTH 40,
+    conf_flag_text TYPE c LENGTH 40,
+  END OF t_rfc_confl,
+
+* End of BSINGH-14-JAN-2017(+)
+
+* For RFC Connection Test
+
+  BEGIN OF t_rfc,
+    rfcdest TYPE rfcdes-rfcdest,
+  END OF t_rfc,
+
+  BEGIN OF t_final_rfc,
+    rfcdes TYPE rfcdes-rfcdest,
+    status TYPE c LENGTH 20,
+  END OF t_final_rfc,
+
+  BEGIN OF t_final_gra,
+
+    graphic(70) TYPE c,
+    type        TYPE c LENGTH 20,
+    source(3)   TYPE c,
+    target(3)   TYPE c,
+  END OF t_final_gra,
+
+*{  Begin of kshenoy
+  BEGIN OF t_final_font,
+    font       TYPE tdfamily,
+    size       TYPE tdfontsize,
+    source(30) TYPE c,
+    target(30) TYPE c,
+  END OF t_final_font,
+
+*}  End of kshenoy
+
+  BEGIN OF t_final_ext,
+    name       TYPE sxpglogcmd,
+    opsystem   TYPE syopsys,
+    opcommand  TYPE btcxpgpgm,
+    parameters TYPE btcxpgpar,
+*      system        TYPE rfcdes-rfcdest,
+    source(3)  TYPE c,
+    target(3)  TYPE c,
+  END OF t_final_ext,
+
+  BEGIN OF t_final_msg,
+    spsrl     TYPE spras,
+    arbgb     TYPE arbgb,
+    stext     TYPE stext,
+    source(3) TYPE c,
+    target(3) TYPE c,
+  END OF t_final_msg,
+
+  BEGIN OF t_final_txt,
+    name      TYPE tdobname,
+    lang      TYPE spras,
+    user      TYPE tdfuser,
+    source(3) TYPE c,
+    target(3) TYPE c,
+  END OF t_final_txt,
+
+  BEGIN OF t_final_page,
+    name      TYPE rspoformat,
+    source(3) TYPE c,
+    target(3) TYPE c,
+
+  END OF t_final_page,
+
+  BEGIN OF t_final_var,
+    report    TYPE varid-report,
+    variant   TYPE varid-variant,
+    source(3) TYPE c,
+    target(3) TYPE c,
+  END OF t_final_var,
+
+
+  BEGIN OF t_tbd00,
+    custmodel TYPE tbd00t-custmodel,
+    modeltext TYPE tbd00t-modeltext,
+  END OF t_tbd00,
+
+
+  BEGIN OF t_final_ppin,
+    mestyp    TYPE edp21-mestyp,
+    mescod    TYPE edp21-mescod,
+    mesfct    TYPE edp21-mesfct,
+    evcode    TYPE edp21-evcode,
+    synchk    TYPE edp21-synchk,
+    inmod     TYPE edp21-inmod,
+    source(3) TYPE c,
+    target(3) TYPE c,
+  END OF t_final_ppin,
+
+  BEGIN OF t_final_ppout,
+    mestyp    TYPE edp13-mestyp,
+    mescod    TYPE edp13-mescod,
+    mesfct    TYPE edp13-mesfct,
+    synchk    TYPE edp13-synchk,
+    rcvpor    TYPE edp13-rcvpor,
+    idoctyp   TYPE edp13-idoctyp,
+    cimtyp    TYPE edp13-cimtyp,
+    source(3) TYPE c,
+    target(3) TYPE c,
+  END OF t_final_ppout,
+
+  BEGIN OF t_final_dmod,
+    custmodel  TYPE custmodel,
+    sndsystem  TYPE sendsystem,
+    mestyp     TYPE edi_mestyp,
+    rcvsystem  TYPE recvsystem,
+    combinenum TYPE combinenum,
+    counter    TYPE fltcounter,
+    ftype      TYPE filtertype,
+    fobjtype   TYPE fobjtype,
+    fobjvalue  TYPE modobjval,
+    fmestyp    TYPE edi_mestyp,
+    source(3)  TYPE c,
+    target(3)  TYPE c,
+  END OF t_final_dmod,
+
+  BEGIN OF t_e070,
+    trkorr     TYPE e070-trkorr,
+    trfunction TYPE e070-trfunction,
+    trstatus   TYPE e070-trstatus,
+    as4user    TYPE e070-as4user,
+    as4date    TYPE e070-as4date,
+    as4time    TYPE e070-as4time,
+    strkorr    TYPE e070-strkorr,
+    as4text    TYPE e07t-as4text,
+  END OF t_e070,
+
+  BEGIN OF t_e070v,
+    trkorr     TYPE e070-trkorr,
+    trfunction TYPE e070-trfunction,
+    trstatus   TYPE e070-trstatus,
+    as4user    TYPE e070-as4user,
+    as4date    TYPE e070-as4date,
+    as4time    TYPE e070-as4time,
+    strkorr    TYPE e070-strkorr,
+    as4text    TYPE e07t-as4text,
+  END OF t_e070v,
+
+  BEGIN OF t_e07t,
+    trkorr  TYPE e07t-trkorr,
+    as4text TYPE e07t-as4text,
+  END OF t_e07t,
+
+  BEGIN OF t_e071,
+    trkorr   TYPE e071-trkorr,
+    as4pos   TYPE e071-as4pos,
+    pgmid    TYPE e071-pgmid,
+    object   TYPE e071-object,
+    obj_name TYPE e071-obj_name,
+  END OF t_e071,
+
+  BEGIN OF t_tadir_tr,
+
+    object   TYPE trobjtype,
+    obj_name TYPE sobj_name,
+    devclass TYPE devclass,
+
+  END OF t_tadir_tr,
+
+  BEGIN OF t_owner,
+    bname TYPE usr02-bname,
+  END OF t_owner,
+
+  BEGIN OF t_trkorr,
+    trkorr  TYPE trkorr,
+    strkorr TYPE trkorr,
+  END OF t_trkorr,
+
+  BEGIN OF t_enlfdir,
+    funcname TYPE rs38l_fnam,
+    area     TYPE rs38l_area,
+  END OF t_enlfdir,
+
+  BEGIN OF t_rel_tr,
+    rc      TYPE tstrfcofil-retcode,
+    trkorr  TYPE trkorr,
+    as4user TYPE tr_as4user,
+    date    TYPE as4date,
+    time    TYPE as4time,
+    sysid   TYPE tstrfcofil-tarsystem,
+    client  TYPE tstrfcofil-tarclient,
+    as4text TYPE as4text,
+    type    TYPE c LENGTH 30,
+  END OF t_rel_tr,
+
+  BEGIN OF t_obj_list,
+    object   TYPE trobjtype,
+    obj_name TYPE tadir-obj_name,
+    devclass TYPE devclass,
+    strkorr  TYPE strkorr,
+    trstatus TYPE c LENGTH 27,
+    as4date  TYPE e070-as4date,
+    movqa    TYPE c,           "++03/31/2017
+    movpre   TYPE c,           "++03/31/2017
+    movpr    TYPE c,           "++03/31/2017
+  END OF t_obj_list,
+
+  BEGIN OF t_tabs,
+    tabname TYPE tabname,
+  END OF t_tabs,
+
+  BEGIN OF t_roll,
+    rollname TYPE rollname,
+  END OF t_roll,
+
+  BEGIN OF t_dd03l,
+    tabname  TYPE tabname,
+    rollname TYPE rollname,
+  END OF t_dd03l,
+
+  BEGIN OF t_dd04l ,
+    rollname TYPE dd04l-rollname,
+    domname  TYPE dd04l-domname,
+    memoryid TYPE dd04l-memoryid,
+    shlpname TYPE dd04l-shlpname,
+    refkind  TYPE dd04l-refkind,
+    reftype  TYPE dd04l-reftype,
+  END OF t_dd04l ,
+
+  BEGIN OF t_open_tr,
+    trkorr  TYPE trkorr,
+    as4text TYPE as4text,
+    as4user TYPE tr_as4user,
+    type    TYPE c LENGTH 30,
+  END OF t_open_tr,
+
+  BEGIN OF t_dep_q,
+    trkorr  TYPE trkorr,
+    as4user TYPE as4user,
+    as4date TYPE as4date,
+    as4time TYPE as4time,
+    as4text TYPE as4text,
+  END OF t_dep_q,
+
+
+  BEGIN OF t_dep_dev,
+    object   TYPE trobjtype,
+    obj_name TYPE tadir-obj_name,
+    devclass TYPE devclass,
+    strkorr  TYPE strkorr,
+    text     TYPE e07t-as4text,
+    trstatus TYPE c LENGTH 27,
+    as4date  TYPE e070-as4date,
+    movqa    TYPE c,           "++03/31/2017
+    movpre   TYPE c,           "++03/31/2017
+    movpr    TYPE c,           "++03/31/2017
+  END OF t_dep_dev,
+
+
+  BEGIN OF t_obj,
+    object   TYPE tadir-object,
+    obj_name TYPE tadir-obj_name,
+    func     TYPE tfdir-funcname,
+    genflag  TYPE c LENGTH 1,
+  END OF t_obj,
+
+  BEGIN OF t_final_tab4,
+    trkorr  TYPE e071-trkorr,
+    as4user TYPE e070-as4user,
+    as4date TYPE e070-as4date,
+    as4time TYPE e070-as4time,
+    as4text TYPE e07t-as4text,
+  END OF t_final_tab4,
+
+  BEGIN OF t_prog_title,
+    name  TYPE trdirt-name,
+    sprsl TYPE trdirt-sprsl,
+    text  TYPE trdirt-text,
+  END OF t_prog_title,
+
+*Begin of code change by Sariful on 29/09/16
+
+* For More Utilities - List of Local Objects
+
+  BEGIN OF t_tmp_object,
+    pgmid    TYPE pgmid,
+    object   TYPE trobjtype,
+    obj_name TYPE sobj_name,
+    author   TYPE responsibl,
+    devclass TYPE devclass,
+  END OF t_tmp_object,
+
+  BEGIN OF t_tmp,
+    obj_name TYPE sobj_name,
+    obj_desc TYPE ddtext,
+    author   TYPE responsibl,
+  END OF t_tmp,
+
+* For More Utilities - Unlocked Standard Texts
+
+  BEGIN OF t_stxh,
+    tdobject TYPE tdobject,
+    tdname   TYPE tdobname,
+    tdid     TYPE tdid,
+    tdspras  TYPE tdspras,
+    tdtitle  TYPE tdtitle,
+    tdfuser  TYPE tdfuser,
+  END OF t_stxh,
+
+  BEGIN OF t_stxh_fet,
+    tdobject TYPE tdobject,
+    tdname   TYPE tdobname,
+    tdid     TYPE tdid,
+    tdspras  TYPE spras,
+    tdtitle  TYPE tdtitle,
+    tdfuser  TYPE tdfuser,
+    objname  TYPE char120,
+  END OF t_stxh_fet,
+
+  BEGIN OF t_stx_e071,
+    trkorr   TYPE trkorr,
+    obj_name TYPE trobj_name,
+  END OF t_stx_e071,
+
+  BEGIN OF t_unlck_sttx,
+    tdobject TYPE tdobject,
+    tdname   TYPE tdobname,
+    tdspras  TYPE spras,
+    tdtitle  TYPE tdtitle,
+    tdfuser  TYPE tdfuser,
+  END OF t_unlck_sttx,
+
+
+  BEGIN OF t_wfevents,
+    objcateg  TYPE swfeclstyp,
+    objtype    TYPE sibftypeid,
+    event      TYPE swo_event,
+    rectype    TYPE swferectyp,
+    recfb      TYPE swe_recfb,
+    checkfb    TYPE swe_chkfb,
+    typelink  TYPE swe_global,
+    rec_error  TYPE string,
+*    rec_error  type swe_recerr,
+*    line_color(4)   type c,
+    source(3) TYPE c,
+    target(3) TYPE c,
+  END OF t_wfevents,
+
+*{Begin of Changes VenkatMani.P
+**--Begin of PORT comparison Changes 04/05/2017
+  BEGIN OF t_port,
+    port      TYPE  edi_pvrcvp,
+    porttyp   TYPE  edi_portyp,
+    descri    TYPE edi_descrt,
+    source(3) TYPE c,
+    target(3) TYPE c,
+  END OF t_port,
+**--End of PORT comparison Changes 04/05/2017
+
+**--Begin of Barcodes comparison Changes 04/05/2017
+  BEGIN OF t_final_barc,
+    tdbarcode  TYPE  tdbarcode,
+    tdtext     TYPE  tdtext,
+    source(30) TYPE c,
+    target(30) TYPE c,
+  END OF t_final_barc,
+**--End of Barcode comparison Changes 04/05/2017
+
+**--Begin of Change Pointers comparison Changes 04/05/2017
+  BEGIN OF t_final_chpt,
+    mestyp    TYPE  edi_mestyp,
+    active    TYPE  ale_active,
+    source(3) TYPE c,
+    target(3) TYPE c,
+  END OF t_final_chpt,
+**--End of Change Pointers comparison Changes 04/05/2017
+
+
+* for change pointer
+  BEGIN OF t_final_change,
+    mestyp(30) TYPE c,
+    active     TYPE c LENGTH 1,
+    source(15) TYPE c,
+    target(15) TYPE c,
+  END OF t_final_change,
+
+
+**--Begin of VOFM Routine comparison Changes 04/10/2017
+  BEGIN OF t_final_vofm,
+    grpze      TYPE  tfrm-grpze,
+    grpsc      TYPE char50,
+    grpno      TYPE  tfrm-grpno,
+    bezei      TYPE bezei20,
+    saktiv     TYPE tfrm-aktiv,
+    taktiv     TYPE tfrm-aktiv,
+    source(20) TYPE c,
+    target(20) TYPE c,
+  END OF t_final_vofm,
+**--End of VOFM Routines comparison Changes 04/10/2017
+
+*} End of Changes VenkatMani.P
+
+  ty_conf_output TYPE TABLE OF t_conf_output,
+  ty_tadir       TYPE TABLE OF t_tadir,
+  ty_tadir_class TYPE TABLE OF t_tadir_class, "BSINGH-14-JAN-2017(+)
+  t_options      TYPE STANDARD TABLE OF rfc_db_opt,
+  t_fields       TYPE STANDARD TABLE OF rfc_db_fld,
+  t_data         TYPE STANDARD TABLE OF tab512.
+
+
+*&---------------------------------------------------------------------*
+*& DATA DECLARATION
+*&---------------------------------------------------------------------*
+
+DATA: g_group1        TYPE char3,
+      g_ucomm         TYPE sy-ucomm,
+      g_srcsys        TYPE scrtext_l,
+      g_tgtsys        TYPE scrtext_l,
+      g_devclass      TYPE tadir-devclass,
+
+*     Start of BSINGH-02-JAN-2016 (+)
+      g_functxt       TYPE smp_dyntxt,
+      g_infoline1     TYPE string,
+      g_infoline2     TYPE string,
+      g_infoline3     TYPE string,
+      g_infoline4     TYPE string,
+      g_infoline5     TYPE string,
+      g_infoline6     TYPE string,
+*     End of BSINGH-02-JAN-2016 (+)
+
+*     Start of BSINGH-14-JAN-2017(+)
+
+      g_objname       TYPE e071-obj_name,
+      g_rfc           TYPE rfcdes-rfcdest,
+      g_transport_key TYPE trkey.
+
+*     End of BSINGH-14-JAN-2017(+)
+*&---------------------------------------------------------------------*
+*& WORK AREAS
+*&---------------------------------------------------------------------*
+
+DATA: wa_rfc         TYPE rfcdes,
+      wa_screen      TYPE screen,
+      wa_e070        TYPE t_e070,
+      wa_e071        TYPE t_e071,
+      wa_obj         TYPE t_obj,
+      wa_func        TYPE t_obj,
+      wa_return      TYPE ddshretval,
+      wa_sort        TYPE slis_sortinfo_alv,
+      wa_final_rfc   TYPE t_final_rfc,
+      wa_rel_tr      TYPE t_rel_tr,
+      wa_open_tr     TYPE t_open_tr,
+      wa_environment TYPE senvi,
+      wa_dep_q       TYPE t_dep_q,
+      wa_e070v       TYPE t_e070v,
+      wa_e07t        TYPE t_e07t,
+      wa_dep_dev     TYPE t_dep_dev,
+      wa_result      TYPE t_obj_list,
+      wa_tabs        TYPE t_tabs,
+      wa_dd03l       TYPE t_dd03l,
+      wa_roll        TYPE t_roll,
+      wa_dd04l       TYPE t_dd04l,
+      wa_envi_types  TYPE envi_types,
+      wa_final_gra   TYPE t_final_gra,
+      wa_final_font  TYPE t_final_font,
+      wa_final_txt   TYPE t_final_txt,
+      wa_final_pag   TYPE t_final_page,
+      wa_final_ppin  TYPE t_final_ppin,
+      wa_final_ppout TYPE t_final_ppout,
+      wa_tbd00       TYPE t_tbd00,
+      wa_final_dmod  TYPE t_final_dmod,
+      wa_final_ext   TYPE t_final_ext,
+      wa_final_msg   TYPE t_final_msg,
+      wa_restrict    TYPE sscr_restrict,
+      wa_final_var   TYPE t_final_var,
+      wa_unlck_sttx  TYPE t_unlck_sttx,
+      wa_fcatn       TYPE lvc_s_fcat,     "+Hyper Link Changes VenkatMani.P 03/17/2017
+* Start of BSINGH-14-JAN-2017(+)
+
+*     For Source Code Comparison Utility
+      wa_rfc_confl   TYPE t_rfc_confl,
+      wa_infoln1a    TYPE vrsinfolna,
+      wa_infoln2a    TYPE vrsinfolna,
+      wa_infoln1b    TYPE vrsinfolnb,
+      wa_infoln2b    TYPE vrsinfolnb.
+
+* End of BSINGH-14-JAN-2017(+)
+*&---------------------------------------------------------------------*
+*& CONSTANTS
+*&---------------------------------------------------------------------*
+
+CONSTANTS: c_per       TYPE c LENGTH 1 VALUE '%',
+           c_star      TYPE c LENGTH 1 VALUE '*',
+           c_h         TYPE c LENGTH 1 VALUE 'H',
+           c_x         TYPE c LENGTH 1 VALUE 'X',
+           c_k         TYPE e070-trfunction VALUE 'K',
+           c_w         TYPE e070-trfunction VALUE 'W',
+           c_r         TYPE e070-trstatus VALUE 'R',
+           c_d         TYPE e070-trstatus VALUE 'D', "Modifiable
+           c_l         TYPE e070-trstatus VALUE 'L', "Modifiable, Protected
+           c_a         TYPE as4local      VALUE 'A',
+           c_suc       TYPE c LENGTH 20 VALUE 'Success',
+           c_fail      TYPE c LENGTH 20 VALUE 'Failure',
+*              For Transport Utility
+           c_z         TYPE c LENGTH 1      VALUE 'Z',
+           c_zz        TYPE c LENGTH 2      VALUE 'ZZ',
+           c_y         TYPE c LENGTH 1      VALUE 'Y',
+           c_lz        TYPE c LENGTH 2      VALUE 'LZ',
+           c_s         TYPE c LENGTH 1      VALUE 'S',
+           c_cust      TYPE c LENGTH 12 VALUE 'Customizing',
+           c_rel       TYPE c LENGTH 12 VALUE 'Released',
+           c_wb        TYPE c LENGTH 10 VALUE 'Workbench',
+           c_e071      TYPE dd02l-tabname VALUE 'E071',
+           c_fugp      TYPE c LENGTH 4      VALUE 'FUGR',
+           c_stru      TYPE c LENGTH 4      VALUE 'STRU',
+           c_tabl      TYPE c LENGTH 4      VALUE 'TABL',
+           c_r3tr      TYPE c LENGTH 4      VALUE 'R3TR',
+           c_limu      TYPE c LENGTH 4      VALUE 'LIMU',
+           c_tabd      TYPE c LENGTH 4      VALUE 'TABD',
+           c_func      TYPE e071-object     VALUE 'FUNC',
+           c_dted      TYPE c LENGTH 4      VALUE 'DTED',
+           c_dtel      TYPE c LENGTH 4      VALUE 'DTEL',
+           c_domd      TYPE c LENGTH 4      VALUE 'DOMD',
+           c_repo      TYPE c LENGTH 4      VALUE 'REPO',
+           c_reps      TYPE c LENGTH 4      VALUE 'REPS',
+           c_rept      TYPE c LENGTH 4      VALUE 'REPT',
+           c_prog      TYPE c LENGTH 4      VALUE 'PROG',
+           c_incl      TYPE c LENGTH 4      VALUE 'INCL',
+           c_doma      TYPE c LENGTH 4      VALUE 'DOMA',
+           c_sapl      TYPE c LENGTH 4      VALUE 'SAPL', "BSINGH-14-JAN-2017(+)
+           c_meth      TYPE c LENGTH 4      VALUE 'METH', "BSINGH-14-JAN-2017(+)
+           c_clas      TYPE c LENGTH 4      VALUE 'CLAS',
+           c_comma     TYPE c LENGTH 1 VALUE '''',
+           c_ans       TYPE santw           VALUE 'A',
+           c_abap_conn TYPE rfcdes-rfctype VALUE '3',
+*Begin of code change by Sariful on 29/09/16
+           c_zobjname  TYPE char02 VALUE 'Z%',
+           c_yobjname  TYPE char02 VALUE 'Y%',
+           c_tmp       TYPE devclass VALUE '$TMP',
+           c_ls        TYPE edpp1-partyp    VALUE 'LS',
+           c_text      TYPE tdobject VALUE 'TEXT',
+           c_st        TYPE tdid VALUE 'ST',
+           c_sap       TYPE tdfuser VALUE 'SAP*',
+*End of code change by Sariful on 29/09/16
+* Start of BSINGH-14-JAN-2017(+)
+           c_subc_1    TYPE trdir-subc VALUE '1',
+           c_subc_i    TYPE trdir-subc VALUE 'I',
+           c_99999     TYPE versno VALUE '99999'.
+* End of BSINGH-14-JAN-2017(+)
+*&---------------------------------------------------------------------*
+*& INTERNAL TABLES
+*&---------------------------------------------------------------------*
+
+DATA: it_obtab       TYPE TABLE OF ko100,
+      it_fieldcat    TYPE slis_t_fieldcat_alv,
+      it_sort        TYPE slis_t_sortinfo_alv,
+*     For RFC Connection test
+      it_final_rfc   TYPE TABLE OF t_final_rfc,
+      it_rfc         TYPE TABLE OF t_rfc,
+      it_rfc_ret     TYPE TABLE OF ddshretval,
+*     For transport Utility
+      it_e070        TYPE TABLE OF t_e070,
+      it_e071        TYPE TABLE OF t_e071,
+      it_e07t        TYPE TABLE OF t_e07t,
+      it_rel_tr      TYPE TABLE OF t_rel_tr,
+      it_open_tr     TYPE TABLE OF t_open_tr,
+      it_dep_q       TYPE TABLE OF t_dep_q,
+      it_dep_dev     TYPE TABLE OF t_dep_dev,
+      it_e070v       TYPE TABLE OF t_e070v,
+      it_obj         TYPE TABLE OF t_obj,
+      it_obj_dup     TYPE TABLE OF t_obj,
+      it_tadir       TYPE TABLE OF t_tadir_tr,
+      it_func        TYPE TABLE OF t_obj,
+      it_senvi_tab   TYPE TABLE OF senvi,
+      it_enlfdir     TYPE TABLE OF t_enlfdir,
+      it_result      TYPE TABLE OF t_obj_list,
+      it_tabs        TYPE TABLE OF t_tabs,
+      it_dd03l       TYPE TABLE OF t_dd03l,
+      it_roll        TYPE TABLE OF t_roll,
+      it_dd04l       TYPE TABLE OF t_dd04l,
+      it_environment TYPE TABLE OF senvi,
+*     For Comparisons
+      it_final_gra   TYPE TABLE OF t_final_gra,
+      it_final_font  TYPE TABLE OF t_final_font,  "kshenoy
+      it_final_ext   TYPE TABLE OF t_final_ext,
+      it_final_msg   TYPE TABLE OF t_final_msg,
+      it_final_txt   TYPE TABLE OF t_final_txt,
+      it_final_pag   TYPE TABLE OF t_final_page,
+      it_final_var   TYPE TABLE OF t_final_var,
+      it_final_ppin  TYPE TABLE OF t_final_ppin,
+      it_final_ppout TYPE TABLE OF t_final_ppout,
+      it_tbd00       TYPE TABLE OF t_tbd00,
+      it_final_dmod  TYPE TABLE OF t_final_dmod,
+      it_optlist     TYPE sscr_opt_list,
+      it_ass         TYPE sscr_ass,
+      it_trkorr      TYPE TABLE OF t_trkorr,
+      it_owner       TYPE TABLE OF t_owner,
+*     For More Utilities - Local Object List
+      it_tmp_object  TYPE TABLE OF t_tmp_object,
+      it_tmp         TYPE TABLE OF t_tmp,
+*     For More Utilities - Unlocked Standard Texts
+      it_unlck_sttx  TYPE TABLE OF t_unlck_sttx,
+      it_stxh        TYPE TABLE OF t_stxh,
+      it_stxh_fet    TYPE TABLE OF t_stxh_fet,
+      it_stx_e071    TYPE TABLE OF t_stx_e071,
+      it_final_wf    TYPE TABLE OF t_wfevents,
+      it_fcatn       TYPE lvc_t_fcat,            "++Hyper Link Changes VenkatMani 17-Mar-2017
+      it_sortn       TYPE lvc_t_sort,            "++Hyper Link Changes VenkatMani 17-Mar-2017
+*     Start of BSINGH-14-JAN-2017(+)
+*     For source Code comparison utility
+      it_rfc_confl   TYPE TABLE OF t_rfc_confl,
+      it_conop       TYPE TABLE OF t_conf_output,
+      it_rswsource   TYPE rswsourcet,
+      it_rswtarget   TYPE rswsourcet,
+      it_mod_sr      TYPE smodi_mod_tab,
+      it_mod_tr      TYPE smodi_mod_tab,
+      it_log_sr      TYPE TABLE OF smodilog,
+      it_log_tr      TYPE TABLE OF smodilog,
+      it_inactive    TYPE TABLE OF t_inactive,
+*     End of BSINGH-14-JAN-2017(+)
+*     Start of VenkatMani.P
+      it_port        TYPE STANDARD TABLE OF t_port, "++Port comparisons 04/05/2017
+      it_final_barc  TYPE STANDARD TABLE OF t_final_barc, "++Barcode comparisons 04/05/2017
+      it_final_chpt  TYPE STANDARD TABLE OF t_final_chpt, "++Change Pointers comparisons 04/05/2017
+      it_final_vofm  TYPE STANDARD TABLE OF t_final_vofm. "++VOFM Routines comparisons 04/10/2017
+*     End of VenkatMani.P
+DATA: lo_container_100 TYPE REF TO cl_gui_custom_container,
+      lo_grid          TYPE REF TO cl_gui_alv_grid.
+
+DATA p_cust TYPE char50.
+*&---------------------------------------------------------------------*
+*& FIELD SYMBOLS
+*&---------------------------------------------------------------------*
+
+FIELD-SYMBOLS: <lfs_obtab> TYPE ko100.
+

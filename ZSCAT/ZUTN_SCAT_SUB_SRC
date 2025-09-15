@@ -1,0 +1,2656 @@
+*&---------------------------------------------------------------------*
+*& Include          ZUTN_SCAT_SUB_SRC
+*&---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*& Include          ZUTN_SCAT_SUB_SRC
+*&---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      CODE COMPARISON UTILITY
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*&      Form  CCK_RESET
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM z_cck_reset .
+  p_prog = abap_true.
+  p_func = abap_false.
+  p_fugr = abap_false.
+  p_clas = abap_false.
+  p_pck = abap_false.
+ENDFORM.                    " CCK_RESET
+
+*&---------------------------------------------------------------------*
+*&      Form  z_compare_obj
+*&---------------------------------------------------------------------*
+*       Main logic for code comparison utility
+*----------------------------------------------------------------------*
+
+FORM z_compare_obj USING fp_oname fp_prgname fp_obtype." CHANGING it_rfc_confl.
+
+  DATA: lit_rep_left    TYPE TABLE OF abaptxt255,
+        lit_rep_rt      TYPE TABLE OF abaptxt255,
+        lit_trdir_left  TYPE TABLE OF trdir,
+        lit_trdir_rt    TYPE TABLE OF trdir,
+        lit_abap_delta  TYPE TABLE OF vxabapt255,
+        lit_trdir_delta TYPE TABLE OF xtrdir,
+        lit_sver        TYPE TABLE OF vrsd,
+        lit_lversno     TYPE TABLE OF vrsn,
+        lit_repot_left  TYPE TABLE OF textpoolt,
+        lit_repot_rt    TYPE TABLE OF textpoolt,
+        lit_repot_delta TYPE TABLE OF xtextpool,
+        lit_fld         TYPE TABLE OF rfc_db_fld,
+        lit_opt         TYPE TABLE OF rfc_db_opt,
+        lit_data        TYPE TABLE OF tab512,
+
+        lwa_opt         TYPE rfc_db_opt,
+        lwa_fld         TYPE rfc_db_fld,
+
+        l_objname       TYPE vrsd-objname,
+        l_reptname      TYPE vrsd-objname,
+        l_objtype       TYPE vrsd-objtype,
+        l_conflict      TYPE c LENGTH 1,
+        l_versn_sr      TYPE vrsd-versno,
+        l_versn_sr_rept TYPE vrsd-versno,
+        l_versn_tr      TYPE vrsd-versno,
+        l_versn_tr_rept TYPE vrsd-versno,
+        l_src_tr        TYPE korrnum,
+        l_src_sr        TYPE korrnum,
+        l_auth_sr       TYPE vrsd-author,
+        l_auth_tr       TYPE vrsd-author,
+        l_dat_sr        TYPE vrsd-datum,
+        l_dat_tr        TYPE vrsd-datum,
+        l_table         TYPE dd02l-tabname.
+
+  DATA: r_ctrfc TYPE RANGE OF rfcdes-rfcdest.
+
+  FIELD-SYMBOLS: <lfs_sver>     TYPE vrsd,
+                 <lfs_ctrfc>    LIKE LINE OF r_ctrfc,
+                 <lfs_inactive> TYPE t_inactive,
+                 <lfs_data>     TYPE tab512.
+
+  l_objname  = fp_oname.
+  l_objtype  = fp_obtype.
+  l_reptname = fp_prgname.
+
+
+* Get the version in the source system
+
+  CLEAR: lit_sver,
+           lit_lversno.
+
+  CALL FUNCTION 'SVRS_GET_VERSION_DIRECTORY_46'
+    EXPORTING
+      destination            = p_csrfc
+      objname                = l_objname
+      objtype                = l_objtype
+    TABLES
+      lversno_list           = lit_lversno
+      version_list           = lit_sver
+    EXCEPTIONS
+      no_entry               = 1
+      communication_failure_ = 2
+      system_failure         = 3
+      OTHERS                 = 4.
+
+  IF sy-subrc NE 0.
+    CLEAR lit_sver.
+  ENDIF. "sy-subrc NE 0.
+
+* Read the latest version number
+
+  CLEAR: l_src_sr,
+         l_versn_sr,
+         l_auth_sr,
+         l_dat_sr.
+
+* Check for inactive version
+
+  SORT lit_sver BY versno DESCENDING.
+
+  READ TABLE lit_sver ASSIGNING <lfs_sver> INDEX 1.
+
+  IF sy-subrc EQ 0 AND <lfs_sver> IS ASSIGNED.
+
+    IF <lfs_sver>-versno EQ c_99999. "Inactive version.
+
+      l_versn_sr  = <lfs_sver>-versno.
+      l_src_sr    = <lfs_sver>-korrnum.
+      l_auth_sr   =  <lfs_sver>-author.
+      l_dat_sr    =  <lfs_sver>-datum.
+
+    ENDIF."<lfs_sver>-versno EQ '9999'.
+
+  ENDIF."sy-subrc EQ 0
+
+* If no inactive version is found get the latest version
+
+  IF l_versn_sr IS INITIAL.
+
+    SORT lit_sver BY versno ASCENDING.
+
+    READ TABLE lit_sver ASSIGNING <lfs_sver> INDEX 1.
+
+    IF sy-subrc EQ 0 AND <lfs_sver> IS ASSIGNED.
+
+      l_versn_sr  = <lfs_sver>-versno.
+      l_src_sr    = <lfs_sver>-korrnum.
+      l_auth_sr  =  <lfs_sver>-author.
+      l_dat_sr  =  <lfs_sver>-datum.
+
+    ENDIF. "<lfs_sver> IS ASSIGNED.
+
+  ENDIF. "l_vers_sr IS INITIAL
+
+* Get the source code from the source system based on the version
+
+  CALL FUNCTION 'SVRS_GET_REPS_FROM_OBJECT'
+    EXPORTING
+      object_name                  = l_objname
+      object_type                  = l_objtype
+      versno                       = l_versn_sr
+      destination                  = p_csrfc
+      iv_no_release_transformation = space
+    TABLES
+      repos_tab                    = lit_rep_left
+      trdir_tab                    = lit_trdir_left
+    EXCEPTIONS
+      no_version                   = 1
+      OTHERS                       = 2.
+
+  IF sy-subrc NE 0.
+
+    CLEAR: lit_rep_left,
+             lit_trdir_left.
+
+  ENDIF. "sy-subrc NE 0.
+
+  CLEAR: it_inactive.
+
+  SELECT object obj_name
+    FROM dwinactiv
+    INTO TABLE it_inactive
+   WHERE object   EQ c_rept
+    AND  obj_name EQ l_reptname.
+
+  IF sy-subrc EQ 0.
+    MOVE: c_99999 TO l_versn_sr_rept.
+  ELSE.
+    MOVE: l_versn_sr TO l_versn_sr_rept.
+  ENDIF. "sy-subrc EQ 0
+
+  CALL FUNCTION 'SVRS_GET_VERSION_REPT_40'
+    EXPORTING
+      destination           = p_csrfc
+      object_name           = l_reptname
+      versno                = l_versn_sr_rept
+    TABLES
+      repot_tab             = lit_repot_left
+    EXCEPTIONS
+      no_version            = 1
+      system_failure        = 2
+      communication_failure = 3
+      OTHERS                = 4.
+  IF sy-subrc <> 0.
+    CLEAR lit_repot_left.
+  ENDIF.
+
+* Get the version in the TARGET system(s)
+
+  CLEAR: it_rfc_confl.
+
+  LOOP AT s_ctrfc ASSIGNING <lfs_ctrfc>.
+
+    CLEAR: lit_sver,
+           lit_lversno.
+
+    CLEAR: wa_rfc_confl,
+           l_versn_tr,
+           l_src_tr,
+           l_auth_tr,
+           l_dat_tr.
+
+    CALL FUNCTION 'SVRS_GET_VERSION_DIRECTORY_46'
+      EXPORTING
+        destination            = <lfs_ctrfc>-low
+        objname                = l_objname
+        objtype                = l_objtype
+      TABLES
+        lversno_list           = lit_lversno
+        version_list           = lit_sver
+      EXCEPTIONS
+        no_entry               = 1
+        communication_failure_ = 2
+        system_failure         = 3
+        OTHERS                 = 4.
+
+    IF sy-subrc NE 0.
+      CLEAR lit_sver.
+    ENDIF. "sy-subrc NE 0.
+
+*   Read the latest version number
+
+*   Check for inactive version
+
+    SORT lit_sver BY versno DESCENDING.
+
+    READ TABLE lit_sver ASSIGNING <lfs_sver> INDEX 1.
+
+    IF sy-subrc EQ 0 AND <lfs_sver> IS ASSIGNED.
+
+      IF <lfs_sver>-versno EQ c_99999. "Inactive version.
+
+        l_versn_tr  = <lfs_sver>-versno.
+        l_src_tr    = <lfs_sver>-korrnum.
+        l_auth_tr   = <lfs_sver>-author.
+        l_dat_tr    = <lfs_sver>-datum.
+
+      ENDIF."<lfs_sver>-versno EQ '9999'.
+
+    ENDIF."sy-subrc EQ 0
+
+*   If no inactive version, get the latest version no
+
+    IF l_versn_tr IS INITIAL.
+
+      SORT lit_sver BY versno ASCENDING.
+
+      READ TABLE lit_sver ASSIGNING <lfs_sver> INDEX 1.
+
+      IF sy-subrc EQ 0 AND <lfs_sver> IS ASSIGNED.
+
+        l_versn_tr = <lfs_sver>-versno.
+        MOVE: <lfs_sver>-korrnum TO l_src_tr.
+        l_auth_tr  =  <lfs_sver>-author.
+        l_dat_tr  =  <lfs_sver>-datum.
+
+      ENDIF. "<lfs_sver> IS ASSIGNED
+
+    ENDIF."l_versn_tr IS INITIAL.
+
+*   Get the source code at the target based on the latest version
+
+    CALL FUNCTION 'SVRS_GET_REPS_FROM_OBJECT'
+      EXPORTING
+        object_name                  = l_objname
+        object_type                  = l_objtype
+        versno                       = l_versn_tr
+        destination                  = <lfs_ctrfc>-low
+        iv_no_release_transformation = space
+      TABLES
+        repos_tab                    = lit_rep_rt
+        trdir_tab                    = lit_trdir_rt
+      EXCEPTIONS
+        no_version                   = 1
+        OTHERS                       = 2.
+
+    IF sy-subrc NE 0.
+      CLEAR: lit_rep_rt,
+               lit_trdir_rt.
+    ENDIF. "sy-subrc NE 0.
+
+*   Find if Report texts are Inactive at the target
+
+    l_table = 'DWINACTIV'.
+
+    CLEAR: lwa_fld.
+    MOVE: 'OBJECT' TO  lwa_fld-fieldname,
+          '4'        TO  lwa_fld-length.
+    APPEND  lwa_fld TO lit_fld.
+
+    CLEAR: lwa_fld.
+    MOVE: 'OBJ_NAME' TO  lwa_fld-fieldname,
+          '120'        TO  lwa_fld-length.
+    APPEND  lwa_fld TO lit_fld.
+
+    CLEAR: lwa_opt.
+    CONCATENATE 'OBJECT EQ ''' c_rept c_comma' AND OBJ_NAME EQ ''' l_reptname c_comma  INTO lwa_opt-text.
+    APPEND lwa_opt TO lit_opt.
+    CLEAR: lwa_opt.
+
+    CALL FUNCTION 'RFC_READ_TABLE' DESTINATION <lfs_ctrfc>-low
+      EXPORTING
+        query_table          = l_table
+      TABLES
+        options              = lit_opt
+        fields               = lit_fld
+        data                 = lit_data
+      EXCEPTIONS
+        table_not_available  = 1
+        table_without_data   = 2
+        option_not_valid     = 3
+        field_not_valid      = 4
+        not_authorized       = 5
+        data_buffer_exceeded = 6
+        OTHERS               = 7.
+    IF sy-subrc NE 0.
+      CLEAR: lit_data.
+    ENDIF. "<lfs_clas> IS ASSIGNED.
+
+    READ TABLE lit_data ASSIGNING <lfs_data> INDEX 1.
+    IF sy-subrc EQ 0 AND <lfs_data> IS ASSIGNED.
+      MOVE: c_99999 TO  l_versn_tr_rept.
+    ELSE.
+      MOVE: l_versn_tr TO l_versn_tr_rept.
+    ENDIF."sy-subrc EQ 0 AND <lfs_data> IS ASSIGNED
+
+    CALL FUNCTION 'SVRS_GET_VERSION_REPT_40'
+      EXPORTING
+        destination           = <lfs_ctrfc>-low
+        object_name           = l_reptname
+        versno                = l_versn_tr_rept
+      TABLES
+        repot_tab             = lit_repot_rt
+      EXCEPTIONS
+        no_version            = 1
+        system_failure        = 2
+        communication_failure = 3
+        OTHERS                = 4.
+    IF sy-subrc <> 0.
+      CLEAR lit_repot_rt.
+    ENDIF.
+
+*    ENDIF. "p_prog IS NOT INITIAL.
+
+    IF l_versn_sr EQ c_99999.
+
+      MOVE: 'Inactive version at source'(082) TO wa_rfc_confl-conf_flag.
+
+    ENDIF. "l_versn_sr EQ c_99999.
+
+    IF l_versn_tr EQ c_99999.
+
+      MOVE: 'Inactive version at target'(083) TO wa_rfc_confl-conf_flag.
+
+    ENDIF. "l_versn_tr EQ c_99999.
+
+* Compare two source codes from source and target.
+
+    IF wa_rfc_confl-conf_flag IS INITIAL.
+
+      CALL FUNCTION 'SVRS_COMPUTE_DELTA_REPS'
+        EXPORTING
+          compare_mode            = 1
+          ignore_case_differences = c_x
+        TABLES
+          texttab_old             = lit_rep_left
+          texttab_new             = lit_rep_rt
+          trdirtab_old            = lit_trdir_left
+          trdirtab_new            = lit_trdir_rt
+          trdir_delta             = lit_trdir_delta
+          text_delta              = lit_abap_delta.
+
+      IF lit_abap_delta IS NOT INITIAL.
+*   If there is a difference found in the two source codes, set conflict as 'X'.
+
+        IF lit_rep_left IS INITIAL.
+
+          MOVE: 'Object does not exist in source'(079) TO wa_rfc_confl-conf_flag.
+
+        ELSEIF lit_rep_rt IS INITIAL.
+
+          MOVE:'Object does not exist in target'(078) TO wa_rfc_confl-conf_flag.
+
+        ELSE.
+
+          MOVE:'Differences exist'(076)  TO wa_rfc_confl-conf_flag.
+
+        ENDIF. "lit_rep_left IS INITIAL.
+
+      ELSE.
+
+*       If there is no difference found in the two source codes, set conflict as 'space'.
+
+        MOVE: 'No Differences'(077)  TO wa_rfc_confl-conf_flag.
+
+      ENDIF. "lit_abap_delta IS NOT INITIAL.
+
+    ENDIF. "wa_rfc_confl-conf_flag IS NOT INITIAL
+
+*    IF p_prog IS NOT INITIAL.
+
+*     Compare the two text pools
+
+    IF l_versn_sr_rept EQ c_99999.
+      MOVE: 'Inactive Texts at Source'(080) TO wa_rfc_confl-conf_flag_text.
+    ENDIF.
+
+    IF l_versn_tr_rept EQ c_99999.
+      MOVE: 'Inactive Texts at Target'(081) TO wa_rfc_confl-conf_flag_text.
+    ENDIF.
+
+    IF wa_rfc_confl-conf_flag_text IS INITIAL.
+
+      IF lit_repot_left IS INITIAL.
+
+        MOVE: 'Object does not exist in source'(079) TO wa_rfc_confl-conf_flag_text.
+
+      ELSEIF lit_repot_rt IS INITIAL.
+
+        MOVE: 'Object does not exist in target'(078) TO wa_rfc_confl-conf_flag_text.
+
+      ELSEIF lines( lit_repot_left ) NE lines( lit_repot_rt ).
+
+        MOVE: 'Differences exist'(076)   TO wa_rfc_confl-conf_flag_text.
+
+      ELSE.
+
+        MOVE: 'No Differences'(077) TO wa_rfc_confl-conf_flag_text.
+
+      ENDIF. "lit_rep_left IS INITIAL.
+
+    ENDIF. "wa_rfc_confl-conf_flag_text IS INITIAL
+
+    MOVE: l_src_sr          TO wa_rfc_confl-sourcetr,
+          l_src_tr          TO wa_rfc_confl-targettr,
+          l_versn_sr        TO wa_rfc_confl-sourcevr,
+          l_versn_tr        TO wa_rfc_confl-targetvr,
+          l_auth_sr         TO wa_rfc_confl-sourceauth,
+          l_auth_tr         TO wa_rfc_confl-targetauth,
+          l_dat_sr          TO wa_rfc_confl-sourcedt,
+          l_dat_tr          TO wa_rfc_confl-targetdt,
+          <lfs_ctrfc>-low   TO wa_rfc_confl-rfcdest.
+
+    APPEND wa_rfc_confl TO it_rfc_confl.
+
+  ENDLOOP."s_ctrfc ASSIGNING <lfs_ctrfc>.
+
+ENDFORM.                    "z_compare_obj
+
+
+*&---------------------------------------------------------------------*
+*&      Form  z_compare_prog
+*&---------------------------------------------------------------------*
+*       Logic for code comparison utility - Program
+*----------------------------------------------------------------------*
+
+FORM z_compare_prog USING    fp_it_prog  TYPE ty_tadir
+                    CHANGING fp_it_conop TYPE ty_conf_output.
+
+  DATA: l_objname  TYPE trobj_name,
+        l_objtype  TYPE vrsd-objtype,
+        l_conf     TYPE c LENGTH 1,
+        l_tx_confl TYPE c LENGTH 1.
+
+  DATA: lit_conop      TYPE TABLE OF t_conf_output,
+        lit_prog       TYPE TABLE OF t_tadir,
+        lit_prog_title TYPE TABLE OF t_prog_title,
+        lwa_conop      TYPE t_conf_output,
+        lwa_col        TYPE slis_specialcol_alv.
+
+  FIELD-SYMBOLS: <lfs_prog>      TYPE t_tadir,
+                 <fs_prog_title> TYPE t_prog_title,
+                 <lfs_rfc_confl> TYPE t_rfc_confl.
+
+  lit_prog[] = fp_it_prog[].
+
+* Get all program titles
+
+  CLEAR lit_prog_title.
+
+  IF lit_prog IS NOT INITIAL.
+
+    SELECT name sprsl text
+      FROM trdirt
+      INTO TABLE lit_prog_title
+      FOR ALL ENTRIES IN lit_prog
+      WHERE name EQ lit_prog-obj_name
+      AND sprsl EQ 'E'. "English
+
+    IF sy-subrc EQ 0.
+      SORT lit_prog_title BY name.
+      DELETE ADJACENT DUPLICATES FROM lit_prog_title COMPARING name.
+    ENDIF. "sy-subrc EQ 0
+
+  ENDIF. "lit_prog IS NOT INITIAL
+
+  LOOP AT lit_prog ASSIGNING <lfs_prog>.
+
+    l_objname = <lfs_prog>-obj_name. "Program Name
+    l_objtype = 'REPS'.
+*    CLEAR: l_conf.
+*   Compare this object between the two rfc destinations
+
+    PERFORM z_compare_obj USING l_objname l_objname l_objtype." CHANGING l_conf l_tx_confl.
+
+    LOOP AT it_rfc_confl ASSIGNING <lfs_rfc_confl>.
+
+*   Add to the final table
+      CLEAR: lwa_conop.
+
+      lwa_conop-prgname  = <lfs_prog>-obj_name. "Program NAme
+      lwa_conop-obj_name = <lfs_prog>-obj_name. "Program NAme
+      lwa_conop-objtyp   = l_objtype. "PROG"
+      lwa_conop-pck      = <lfs_prog>-devclass."Package
+      lwa_conop-author   = <lfs_prog>-author."Author
+
+*   Get the description of the object type.
+      SORT it_obtab BY object.
+
+      READ TABLE it_obtab ASSIGNING <lfs_obtab>
+      WITH KEY object = l_objtype BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        lwa_conop-objtypedesc = <lfs_obtab>-text. "Obj Type Desc
+      ENDIF. "sy-subrc EQ 0.
+
+*   Get the title of the report.
+
+      SORT lit_prog_title BY name.
+
+      READ TABLE lit_prog_title
+      ASSIGNING <fs_prog_title>
+      WITH KEY name = <lfs_prog>-obj_name BINARY SEARCH.
+
+      IF sy-subrc EQ 0 AND <fs_prog_title> IS ASSIGNED.
+        lwa_conop-title = <fs_prog_title>-text.
+      ENDIF."sy-subrc EQ
+
+      lwa_conop-rfcdest_s   = p_csrfc.
+      lwa_conop-sourcetr    = <lfs_rfc_confl>-sourcetr.
+      lwa_conop-sourcevr    = <lfs_rfc_confl>-sourcevr.
+      lwa_conop-sourcedt    = <lfs_rfc_confl>-sourcedt.
+      lwa_conop-sourceauth  = <lfs_rfc_confl>-sourceauth.
+      lwa_conop-rfcdest     = <lfs_rfc_confl>-rfcdest.
+      lwa_conop-targettr    = <lfs_rfc_confl>-targettr.
+      lwa_conop-targetvr    = <lfs_rfc_confl>-targetvr.
+      lwa_conop-targetdt    = <lfs_rfc_confl>-targetdt.
+      lwa_conop-targetauth  = <lfs_rfc_confl>-targetauth.
+      lwa_conop-conflict    = <lfs_rfc_confl>-conf_flag.
+      lwa_conop-tx_conflict = <lfs_rfc_confl>-conf_flag_text.
+
+      CLEAR: lwa_col.
+
+      IF lwa_conop-conflict EQ TEXT-077.
+
+        lwa_col-fieldname = 'CONFLICT'.
+        lwa_col-color-col = 5.
+        lwa_col-color-int = 1.
+        lwa_col-color-inv = 0.
+        APPEND lwa_col TO lwa_conop-coltab.
+
+      ELSEIF lwa_conop-conflict EQ TEXT-076.
+
+        lwa_col-fieldname = 'CONFLICT'.
+        lwa_col-color-col = 6.
+        lwa_col-color-int = 1.
+        lwa_col-color-inv = 0.
+        APPEND lwa_col TO lwa_conop-coltab.
+
+      ENDIF."lwa_conop-conflict IS NOT INITIAL
+
+      IF lwa_conop-tx_conflict EQ TEXT-077.
+
+        lwa_col-fieldname = 'TX_CONFLICT'.
+        lwa_col-color-col = 5.
+        lwa_col-color-int = 1.
+        lwa_col-color-inv = 0.
+        APPEND lwa_col TO lwa_conop-coltab.
+
+      ELSEIF lwa_conop-tx_conflict EQ TEXT-076.
+
+        lwa_col-fieldname = 'TX_CONFLICT'.
+        lwa_col-color-col = 6.
+        lwa_col-color-int = 1.
+        lwa_col-color-inv = 0.
+        APPEND lwa_col TO lwa_conop-coltab.
+
+      ENDIF."lwa_conop-conflict IS NOT INITIAL
+
+      APPEND lwa_conop TO lit_conop.
+
+    ENDLOOP. "it_rfc_confl ASSIGNING <lfs_rfc_confl>.
+
+  ENDLOOP. "AT lit_prog ASSIGNING <lfs_prog>.
+
+  APPEND LINES OF lit_conop TO fp_it_conop.
+*  fp_it_conop[] = lit_conop[].
+
+ENDFORM. "z_compare_prog
+
+*&---------------------------------------------------------------------*
+*&      Form  z_compare_clas
+*&---------------------------------------------------------------------*
+*       Logic for code comparison utility - Classes
+*----------------------------------------------------------------------*
+
+FORM z_compare_clas USING    fp_it_clas  TYPE ty_tadir
+                    CHANGING fp_it_conop TYPE ty_conf_output.
+
+  DATA: l_objname  TYPE trobj_name,
+        l_reptname TYPE c LENGTH 32,
+        l_objtype  TYPE vrsd-objtype,
+        l_conf     TYPE c LENGTH 1,
+        l_tx_confl TYPE c LENGTH 1,
+        l_table    TYPE dd02l-tabname.
+
+  DATA: r_ctrfc TYPE RANGE OF rfcdes-rfcdest.
+
+  TYPES: BEGIN OF lt_class,
+           classname  TYPE seoclsname,
+           methodindx TYPE seomtdindx,
+           methodname TYPE seocpdname,
+         END OF lt_class.
+
+  DATA: lit_class   TYPE TABLE OF lt_class,
+        lit_conop   TYPE TABLE OF t_conf_output,
+        lit_tadir   TYPE TABLE OF t_tadir,
+        lit_clas    TYPE TABLE OF t_tadir_class,
+*        lit_clas  TYPE TABLE OF t_tadir,
+        lit_fld     TYPE TABLE OF rfc_db_fld,
+        lit_opt     TYPE TABLE OF rfc_db_opt,
+        lit_data    TYPE TABLE OF tab512,
+
+        lwa_conop   TYPE t_conf_output,
+        lwa_tadir   TYPE t_tadir,
+        lwa_opt     TYPE rfc_db_opt,
+        lwa_fld     TYPE rfc_db_fld,
+        lwa_col     TYPE slis_specialcol_alv,
+        lwa_class   TYPE lt_class,
+        lwa_itclass TYPE t_tadir_class.
+
+  FIELD-SYMBOLS: <lfs_class>     TYPE lt_class,
+                 <lfs_clas>      TYPE t_tadir_class,
+                 <lfs_rfc_confl> TYPE t_rfc_confl,
+                 <lfs_ctrfc>     LIKE LINE OF r_ctrfc,
+                 <lfs_data>      TYPE tab512.
+
+  LOOP AT fp_it_clas ASSIGNING FIELD-SYMBOL(<lfs_itclass>).
+
+    lwa_itclass-pgmid = <lfs_itclass>-pgmid.
+    lwa_itclass-object = <lfs_itclass>-object.
+    lwa_itclass-obj_name = <lfs_itclass>-obj_name.
+    lwa_itclass-author = <lfs_itclass>-author.
+    lwa_itclass-devclass = <lfs_itclass>-devclass.
+
+    APPEND lwa_itclass TO lit_clas.
+
+  ENDLOOP."fp_it_class ASSIGNING FIELD-SYMBOL(<lfs_itclass>)
+
+*  lit_clas[] = fp_it_clas[].
+
+* Get all methods from the current system
+
+  IF lit_clas IS NOT INITIAL.
+
+    SELECT classname methodindx methodname
+      FROM tmdir
+      INTO TABLE lit_class
+      FOR ALL ENTRIES IN lit_clas
+      WHERE classname EQ lit_clas-obj_name.
+
+    IF sy-subrc EQ 0.
+      SORT lit_class BY classname methodindx methodname.
+    ENDIF."sy-subrc NE 0
+
+  ENDIF. "lit_clas IS NOT INITIAL
+
+* Get all methods from the target system
+
+  l_table = 'TMDIR'.
+
+  CLEAR: lwa_fld.
+  MOVE: 'CLASSNAME' TO  lwa_fld-fieldname,
+        '30'        TO  lwa_fld-length.
+  APPEND  lwa_fld TO lit_fld.
+
+  CLEAR: lwa_fld.
+  MOVE: 'METHODINDX' TO  lwa_fld-fieldname,
+        '5'        TO  lwa_fld-length.
+  APPEND  lwa_fld TO lit_fld.
+
+  CLEAR: lwa_fld.
+  MOVE: 'METHODNAME' TO  lwa_fld-fieldname,
+        '61'        TO  lwa_fld-length.
+  APPEND  lwa_fld TO lit_fld.
+
+  LOOP AT lit_clas ASSIGNING <lfs_clas>.
+
+    IF <lfs_clas> IS ASSIGNED.
+
+*     Create the WHERE Clause
+
+      CLEAR: lwa_opt.
+      CONCATENATE 'CLASSNAME EQ ''' <lfs_clas>-obj_name c_comma  INTO lwa_opt-text.
+      APPEND lwa_opt TO lit_opt.
+      CLEAR: lwa_opt.
+
+*     Need to get method names from all target systems entered on selection screen
+
+      LOOP AT s_ctrfc ASSIGNING <lfs_ctrfc>.
+
+        CALL FUNCTION 'RFC_READ_TABLE' DESTINATION <lfs_ctrfc>-low
+          EXPORTING
+            query_table          = l_table
+          TABLES
+            options              = lit_opt
+            fields               = lit_fld
+            data                 = lit_data
+          EXCEPTIONS
+            table_not_available  = 1
+            table_without_data   = 2
+            option_not_valid     = 3
+            field_not_valid      = 4
+            not_authorized       = 5
+            data_buffer_exceeded = 6
+            OTHERS               = 7.
+        IF sy-subrc NE 0.
+          CLEAR: lit_data.
+        ENDIF. "<lfs_clas> IS ASSIGNED.
+
+        LOOP AT lit_data ASSIGNING <lfs_data>.
+
+          IF <lfs_data> IS ASSIGNED.
+            CLEAR: lwa_class.
+            MOVE: <lfs_data>+0(30)   TO lwa_class-classname,
+                  <lfs_data>+30(5)   TO lwa_class-methodindx,
+                  <lfs_data>+35(61)  TO lwa_class-methodname.
+
+*           Add the method only if it is not there in the source system
+
+
+            READ TABLE lit_class ASSIGNING <lfs_class> FROM lwa_class.
+            IF sy-subrc NE 0.
+              APPEND lwa_class TO lit_class.
+            ENDIF. "sy-subrc NE 0.
+
+          ENDIF. "<lfs_data> IS ASSIGNED
+
+        ENDLOOP. "lit_data ASSIGNING <lfs_data>.
+
+      ENDLOOP. "s_ctrfc ASSIGNING <lfs_ctrfc>.
+
+    ENDIF. "<lfs_clas> IS ASSIGNED.
+
+  ENDLOOP. "lit_clas ASSIGNING <lfs_clas>.
+  IF lit_class IS NOT INITIAL.
+
+    DELETE lit_class WHERE methodname IS INITIAL.
+
+    LOOP AT lit_class ASSIGNING <lfs_class>.
+
+      CLEAR: l_objname, l_reptname.
+
+      CONCATENATE <lfs_class>-classname <lfs_class>-methodname INTO l_objname RESPECTING BLANKS.
+      l_objtype = c_meth.
+
+      CONCATENATE <lfs_class>-classname 'CP' INTO l_reptname RESPECTING BLANKS.
+      TRANSLATE l_reptname USING ' ='.
+
+      PERFORM z_compare_obj USING  l_objname l_reptname l_objtype.
+
+      LOOP AT it_rfc_confl ASSIGNING <lfs_rfc_confl>.
+
+        IF <lfs_rfc_confl> IS ASSIGNED.
+
+          CLEAR: lwa_conop.
+
+          lwa_conop-class       = <lfs_class>-classname.
+          lwa_conop-obj_name    = <lfs_class>-classname.
+          lwa_conop-methname    = <lfs_class>-methodname.
+          lwa_conop-sub_obj     = <lfs_class>-methodname.
+          lwa_conop-objtyp      = c_meth.
+
+          SORT lit_clas BY obj_name.
+
+          READ TABLE lit_clas ASSIGNING <lfs_clas>
+          WITH KEY obj_name = <lfs_class>-classname BINARY SEARCH.
+          IF sy-subrc EQ 0.
+
+            lwa_conop-pck         = <lfs_clas>-devclass.
+            lwa_conop-author      = <lfs_clas>-author.
+
+          ENDIF. "sy-subrc EQ 0.
+
+          lwa_conop-rfcdest_s   = p_csrfc.
+          lwa_conop-sourcetr    = <lfs_rfc_confl>-sourcetr.
+          lwa_conop-sourcevr    = <lfs_rfc_confl>-sourcevr.
+          lwa_conop-sourceauth  = <lfs_rfc_confl>-sourceauth.
+          lwa_conop-sourcedt    = <lfs_rfc_confl>-sourcedt.
+          lwa_conop-rfcdest     = <lfs_rfc_confl>-rfcdest.
+          lwa_conop-targettr    = <lfs_rfc_confl>-targettr.
+          lwa_conop-targetvr    = <lfs_rfc_confl>-targetvr.
+          lwa_conop-targetdt    = <lfs_rfc_confl>-targetdt.
+          lwa_conop-targetauth  = <lfs_rfc_confl>-targetauth.
+          lwa_conop-conflict    = <lfs_rfc_confl>-conf_flag.
+          lwa_conop-tx_conflict = <lfs_rfc_confl>-conf_flag_text.
+          SORT it_obtab BY object.
+          READ TABLE it_obtab ASSIGNING <lfs_obtab>
+          WITH KEY object = lwa_conop-objtyp BINARY SEARCH.
+
+          IF sy-subrc EQ 0.
+            lwa_conop-objtypedesc = <lfs_obtab>-text.
+          ENDIF. "sy-subrc EQ 0.
+
+          CLEAR: lwa_col.
+
+          IF lwa_conop-conflict EQ TEXT-077.
+
+            lwa_col-fieldname = 'CONFLICT'.
+            lwa_col-color-col = 5.
+            lwa_col-color-int = 1.
+            lwa_col-color-inv = 0.
+            APPEND lwa_col TO lwa_conop-coltab.
+
+          ELSEIF lwa_conop-conflict EQ TEXT-076.
+
+            lwa_col-fieldname = 'CONFLICT'.
+            lwa_col-color-col = 6.
+            lwa_col-color-int = 1.
+            lwa_col-color-inv = 0.
+            APPEND lwa_col TO lwa_conop-coltab.
+
+          ENDIF."lwa_conop-conflict IS NOT INITIAL
+
+          IF lwa_conop-tx_conflict EQ TEXT-077.
+
+            lwa_col-fieldname = 'TX_CONFLICT'.
+            lwa_col-color-col = 5.
+            lwa_col-color-int = 1.
+            lwa_col-color-inv = 0.
+            APPEND lwa_col TO lwa_conop-coltab.
+
+          ELSEIF lwa_conop-tx_conflict EQ TEXT-076.
+
+            lwa_col-fieldname = 'TX_CONFLICT'.
+            lwa_col-color-col = 6.
+            lwa_col-color-int = 1.
+            lwa_col-color-inv = 0.
+            APPEND lwa_col TO lwa_conop-coltab.
+
+          ENDIF."lwa_conop-conflict IS NOT INITIAL
+
+          APPEND lwa_conop TO lit_conop.
+
+        ENDIF. "<lfs_rfc_confl> IS ASSIGNED
+
+      ENDLOOP. "it_rfc_confl ASSIGNING <lfs_rfc_confl>
+
+    ENDLOOP. "lit_class ASSIGNING <lfs_class>.
+
+  ENDIF." sy-subrc EQ 0 AND lit_class IS NOT INITIAL.
+
+  APPEND LINES OF lit_conop TO fp_it_conop.
+
+ENDFORM. "z_compare_clas
+
+*&---------------------------------------------------------------------*
+*&      Form  z_compare_ssfo
+*&---------------------------------------------------------------------*
+*       Logic for code comparison utility - Smartforms
+*----------------------------------------------------------------------*
+
+FORM z_compare_ssfo USING    fp_it_ssfo  TYPE ty_tadir
+                    CHANGING fp_it_conop TYPE ty_conf_output.
+
+  TYPES: BEGIN OF lt_formnum,
+           formname TYPE tdsfname,
+           fmnumb   TYPE tdfmnumb,
+         END OF lt_formnum,
+
+         BEGIN OF lt_formname,
+           formname   TYPE tdsfname,
+           fmnumb_s   TYPE tdfmnumb,
+           sys_form_s TYPE rs38l_fnam,
+           sys_top_s  TYPE programm,
+           sys_uxx_s  TYPE programm,
+           sys_f01_s  TYPE programm,
+           fmnumb_t   TYPE tdfmnumb,
+           sys_form_t TYPE rs38l_fnam,
+           sys_top_t  TYPE programm,
+           sys_uxx_t  TYPE programm,
+           sys_f01_t  TYPE programm,
+         END OF lt_formname.
+
+  DATA: l_objname  TYPE trobj_name,
+        l_objtype  TYPE vrsd-objtype,
+        l_conf     TYPE c LENGTH 1,
+        l_tx_confl TYPE c LENGTH 1,
+        l_formnm   TYPE i,
+        l_fm       TYPE rs38l_fnam,
+        l_inc      TYPE programm,
+        l_table    TYPE dd02l-tabname.
+
+
+  DATA: lit_conop    TYPE TABLE OF t_conf_output,
+        lit_ssfo     TYPE TABLE OF t_tadir_form,
+        lit_formnum  TYPE TABLE OF lt_formnum,
+        lit_formname TYPE TABLE OF lt_formname,
+        lit_fld      TYPE TABLE OF rfc_db_fld,
+        lit_data_s   TYPE TABLE OF tab512,
+        lit_data_t   TYPE TABLE OF tab512,
+        lit_opt      TYPE TABLE OF rfc_db_opt,
+        lwa_conop    TYPE t_conf_output,
+        lwa_col      TYPE slis_specialcol_alv,
+        lwa_fld      TYPE rfc_db_fld,
+        lwa_opt      TYPE rfc_db_opt,
+        lwa_formname TYPE lt_formname.
+
+  FIELD-SYMBOLS: <lfs_ssfo>      TYPE t_tadir_form,
+                 <lfs_rfc_confl> TYPE t_rfc_confl,
+                 <lfs_formnum>   TYPE lt_formnum,
+                 <lfs_formname>  TYPE lt_formname,
+                 <lfs_data>      TYPE tab512.
+
+  CONSTANTS: lc_fixname    TYPE tdsfname VALUE '/1BCDWB/SF',
+             lc_fixprgname TYPE programm VALUE '/1BCDWB/LSF',
+             lc_uxx        TYPE char3 VALUE 'UXX',
+             lc_top        TYPE char3 VALUE 'TOP',
+             lc_f01        TYPE char3 VALUE 'F01'.
+
+  lit_ssfo[] = fp_it_ssfo[].
+
+* For every smartform, read the internal numbers in source and target systems
+* For every smartform, also generate the include names in source & tragte systems
+
+
+  LOOP AT lit_ssfo ASSIGNING <lfs_ssfo>.
+
+*   Populate  the table name/where clause and field list
+
+    l_table = 'STXFADMI'.
+
+    CLEAR: lwa_fld.
+    MOVE: 'FORMNAME' TO  lwa_fld-fieldname,
+          '30'        TO  lwa_fld-length.
+    APPEND  lwa_fld TO lit_fld.
+
+    CLEAR: lwa_fld.
+    MOVE: 'FMNUMB' TO  lwa_fld-fieldname,
+          '8'        TO  lwa_fld-length.
+    APPEND lwa_fld TO lit_fld.
+
+    CLEAR: lwa_opt.
+    CONCATENATE 'FORMNAME EQ ''' <lfs_ssfo>-obj_name c_comma  INTO lwa_opt-text.
+    APPEND lwa_opt TO lit_opt.
+    CLEAR: lwa_opt.
+
+*   Read the internal SF number from Source
+
+    CALL FUNCTION 'RFC_READ_TABLE' DESTINATION p_csrfc
+      EXPORTING
+        query_table          = l_table
+      TABLES
+        options              = lit_opt
+        fields               = lit_fld
+        data                 = lit_data_s
+      EXCEPTIONS
+        table_not_available  = 1
+        table_without_data   = 2
+        option_not_valid     = 3
+        field_not_valid      = 4
+        not_authorized       = 5
+        data_buffer_exceeded = 6
+        OTHERS               = 7.
+    IF sy-subrc NE 0.
+      CLEAR: lit_data_s.
+    ENDIF. "sy-subrc NE 0.
+
+*   Read the internal SF number from Target
+
+    CALL FUNCTION 'RFC_READ_TABLE' DESTINATION s_ctrfc-low
+      EXPORTING
+        query_table          = l_table
+      TABLES
+        options              = lit_opt
+        fields               = lit_fld
+        data                 = lit_data_t
+      EXCEPTIONS
+        table_not_available  = 1
+        table_without_data   = 2
+        option_not_valid     = 3
+        field_not_valid      = 4
+        not_authorized       = 5
+        data_buffer_exceeded = 6
+        OTHERS               = 7.
+    IF sy-subrc NE 0.
+      CLEAR: lit_data_t.
+    ENDIF. "sy-subrc NE 0.
+
+*   Prepare a table with form name and source/target includes
+
+    LOOP AT lit_data_s ASSIGNING <lfs_data>.
+
+      IF <lfs_data> IS ASSIGNED.
+
+        CLEAR: lwa_formname.
+
+        lwa_formname-formname = <lfs_data>+0(30).
+        lwa_formname-fmnumb_s = <lfs_data>+30(8) .
+
+        CLEAR: l_fm.
+        CONCATENATE lc_fixname lwa_formname-fmnumb_s INTO l_fm.
+        lwa_formname-sys_form_s = l_fm.
+
+        CLEAR: l_inc.
+        CONCATENATE lc_fixprgname lwa_formname-fmnumb_s lc_top INTO l_inc.
+        lwa_formname-sys_top_s = l_inc.
+
+        CLEAR: l_inc.
+        CONCATENATE lc_fixprgname lwa_formname-fmnumb_s lc_f01 INTO l_inc.
+        lwa_formname-sys_f01_s = l_inc.
+
+        CLEAR: l_inc.
+        CONCATENATE lc_fixprgname lwa_formname-fmnumb_s lc_uxx INTO l_inc.
+        lwa_formname-sys_uxx_s = l_inc.
+
+      ENDIF. "<lfs_data> IS ASSIGNED.
+
+    ENDLOOP."lit_data ASSIGNING <lfs_data>.
+
+    LOOP AT lit_data_t ASSIGNING <lfs_data>.
+
+      IF <lfs_data> IS ASSIGNED.
+
+        CLEAR: lwa_formname.
+
+        lwa_formname-fmnumb_t   = <lfs_data>+30(8) .
+
+        CLEAR: l_fm.
+        CONCATENATE lc_fixname lwa_formname-fmnumb_t INTO l_fm.
+        lwa_formname-sys_form_t = l_fm.
+
+        CLEAR: l_inc.
+        CONCATENATE lc_fixprgname lwa_formname-fmnumb_t lc_top INTO l_inc.
+        lwa_formname-sys_top_t = l_inc.
+
+        CLEAR: l_inc.
+        CONCATENATE lc_fixprgname lwa_formname-fmnumb_t lc_f01 INTO l_inc.
+        lwa_formname-sys_f01_t = l_inc.
+
+        CLEAR: l_inc.
+        CONCATENATE lc_fixprgname lwa_formname-fmnumb_t lc_uxx INTO l_inc.
+        lwa_formname-sys_uxx_t = l_inc.
+
+      ENDIF. "<lfs_data> IS ASSIGNED.
+
+    ENDLOOP."lit_data ASSIGNING <lfs_data>.
+
+    APPEND lwa_formname TO lit_formname.
+
+  ENDLOOP. "lit_ssfo ASSIGNING <lfs_ssfo>.
+
+
+
+*  LOOP AT lit_prog ASSIGNING <lfs_prog>.
+*
+*    l_objname = <lfs_prog>-obj_name. "Program Name
+*    l_objtype = 'REPS'.
+**    CLEAR: l_conf.
+**   Compare this object between the two rfc destinations
+*
+*    PERFORM z_compare_obj USING l_objname l_objname l_objtype." CHANGING l_conf l_tx_confl.
+*
+*    LOOP AT it_rfc_confl ASSIGNING <lfs_rfc_confl>.
+*
+**   Add to the final table
+*      CLEAR: lwa_conop.
+*
+*      lwa_conop-prgname  = <lfs_prog>-obj_name. "Program NAme
+*      lwa_conop-obj_name = <lfs_prog>-obj_name. "Program NAme
+*      lwa_conop-objtyp   = l_objtype. "PROG"
+*      lwa_conop-pck      = <lfs_prog>-devclass."Package
+*      lwa_conop-author   = <lfs_prog>-author."Author
+*
+**   Get the description of the object type.
+*      SORT it_obtab BY object.
+*
+*      READ TABLE it_obtab ASSIGNING <lfs_obtab>
+*      WITH KEY object = l_objtype BINARY SEARCH.
+*      IF sy-subrc EQ 0.
+*        lwa_conop-objtypedesc = <lfs_obtab>-text. "Obj Type Desc
+*      ENDIF. "sy-subrc EQ 0.
+*
+**   Get the title of the report.
+*
+*      SORT lit_prog_title BY name.
+*
+*      READ TABLE lit_prog_title
+*      ASSIGNING <fs_prog_title>
+*      WITH KEY name = <lfs_prog>-obj_name BINARY SEARCH.
+*
+*      IF sy-subrc EQ 0 AND <fs_prog_title> IS ASSIGNED.
+*        lwa_conop-title = <fs_prog_title>-text.
+*      ENDIF."sy-subrc EQ
+*
+*      lwa_conop-rfcdest_s   = p_csrfc.
+*      lwa_conop-sourcetr    = <lfs_rfc_confl>-sourcetr.
+*      lwa_conop-sourcevr    = <lfs_rfc_confl>-sourcevr.
+*      lwa_conop-sourcedt    = <lfs_rfc_confl>-sourcedt.
+*      lwa_conop-sourceauth  = <lfs_rfc_confl>-sourceauth.
+*      lwa_conop-rfcdest     = <lfs_rfc_confl>-rfcdest.
+*      lwa_conop-targettr    = <lfs_rfc_confl>-targettr.
+*      lwa_conop-targetvr    = <lfs_rfc_confl>-targetvr.
+*      lwa_conop-targetdt    = <lfs_rfc_confl>-targetdt.
+*      lwa_conop-targetauth  = <lfs_rfc_confl>-targetauth.
+*      lwa_conop-conflict    = <lfs_rfc_confl>-conf_flag.
+*      lwa_conop-tx_conflict = <lfs_rfc_confl>-conf_flag_text.
+*
+*      CLEAR: lwa_col.
+*
+*      IF lwa_conop-conflict EQ text-077.
+*
+*        lwa_col-fieldname = 'CONFLICT'.
+*        lwa_col-color-col = 5.
+*        lwa_col-color-int = 1.
+*        lwa_col-color-inv = 0.
+*        APPEND lwa_col TO lwa_conop-coltab.
+*
+*      ELSEIF lwa_conop-conflict EQ text-076.
+*
+*        lwa_col-fieldname = 'CONFLICT'.
+*        lwa_col-color-col = 6.
+*        lwa_col-color-int = 1.
+*        lwa_col-color-inv = 0.
+*        APPEND lwa_col TO lwa_conop-coltab.
+*
+*      ENDIF."lwa_conop-conflict IS NOT INITIAL
+*
+*      IF lwa_conop-tx_conflict EQ text-077.
+*
+*        lwa_col-fieldname = 'TX_CONFLICT'.
+*        lwa_col-color-col = 5.
+*        lwa_col-color-int = 1.
+*        lwa_col-color-inv = 0.
+*        APPEND lwa_col TO lwa_conop-coltab.
+*
+*      ELSEIF lwa_conop-tx_conflict EQ text-076.
+*
+*        lwa_col-fieldname = 'TX_CONFLICT'.
+*        lwa_col-color-col = 6.
+*        lwa_col-color-int = 1.
+*        lwa_col-color-inv = 0.
+*        APPEND lwa_col TO lwa_conop-coltab.
+*
+*      ENDIF."lwa_conop-conflict IS NOT INITIAL
+*
+*      APPEND lwa_conop TO lit_conop.
+*
+*    ENDLOOP. "it_rfc_confl ASSIGNING <lfs_rfc_confl>.
+*
+*  ENDLOOP. "AT lit_prog ASSIGNING <lfs_prog>.
+
+  APPEND LINES OF lit_conop TO fp_it_conop.
+*  fp_it_conop[] = lit_conop[].
+
+ENDFORM. "z_compare_ssfo
+
+
+*&---------------------------------------------------------------------*
+*&      Form  z_compare_intf
+*&---------------------------------------------------------------------*
+*       Logic for code comparison utility - Interfaces
+*----------------------------------------------------------------------*
+
+*FORM z_compare_intf USING    fp_it_intf  TYPE ty_tadir
+*                    CHANGING fp_it_conop TYPE ty_conf_output.
+*
+*  DATA: l_objname  TYPE trobj_name,
+*        l_objtype  TYPE vrsd-objtype,
+*        l_conf     TYPE c LENGTH 1,
+*        l_tx_confl TYPE c LENGTH 1.
+*
+*  TYPES: BEGIN OF lt_intf,
+*           clsname  TYPE seoclsname,
+*           cmpname TYPE seocpdname,
+*         END OF lt_intf.
+*
+*  DATA: lit_intfc TYPE TABLE OF lt_intf,
+*        lit_conop TYPE TABLE OF t_conf_output,
+*        lit_intf  TYPE TABLE OF t_tadir,
+*
+*        lwa_conop TYPE t_conf_output,
+*        lwa_tadir TYPE t_tadir.
+*
+*  FIELD-SYMBOLS: <lfs_intfc> TYPE lt_intf,
+*                 <lfs_intf>  TYPE t_tadir.
+*
+*  lit_intf[] = fp_it_intf[].
+*
+*  LOOP AT lit_intf ASSIGNING <lfs_intf>.
+*
+*    clear: lit_intfc.
+*
+*    SELECT clsname cmpname
+*      FROM seocompo
+*      INTO TABLE lit_intfc
+*      WHERE clsname EQ <lfs_intf>-obj_name AND
+*            cmptype EQ 1. " Component Type = Method (3)
+*
+*    IF sy-subrc EQ 0 AND lit_intfc IS NOT INITIAL.
+*
+*
+*      LOOP AT  lit_intfc ASSIGNING <lfs_intfc>.
+*
+*        CLEAR l_objname.
+*        CONCATENATE <lfs_intfc>-clsname <lfs_intfc>-cmpname INTO l_objname RESPECTING BLANKS.
+*        l_objtype = 'METH'.
+*        CLEAR: l_conf,
+*               l_tx_confl.
+*        PERFORM z_compare_obj USING  l_objname l_objtype." CHANGING l_conf l_tx_confl.
+*
+*        CLEAR: lwa_conop.
+*
+*        lwa_conop-class    = <lfs_intfc>-clsname.
+*        lwa_conop-methname = <lfs_intfc>-cmpname.
+*        lwa_conop-objtyp   = 'METH'.
+*        lwa_conop-conflict = l_conf.
+*        lwa_conop-pck      = <lfs_intf>-devclass.
+*        lwa_conop-author   = <lfs_intf>-author.
+*
+*        READ TABLE it_obtab ASSIGNING <lfs_obtab>
+*        WITH KEY object = lwa_conop-objtyp.
+*
+*        IF sy-subrc EQ 0.
+*          lwa_conop-objtypedesc = <lfs_obtab>-text.
+*        ENDIF. "sy-subrc EQ 0.
+*
+*        APPEND lwa_conop TO lit_conop.
+*
+*      ENDLOOP. "lit_class ASSIGNING <lfs_class>.
+*
+*    ENDIF." sy-subrc EQ 0 AND lit_class IS NOT INITIAL.
+*
+*  ENDLOOP. "AT lit_clas ASSIGNING <lfs_clas>.
+*
+*  APPEND LINES OF lit_conop TO fp_it_conop.
+**  fp_it_conop[] = lit_conop[].
+*
+*ENDFORM. "z_compare_intf
+
+
+*&---------------------------------------------------------------------*
+*&      Form  z_compare_fugr
+*&---------------------------------------------------------------------*
+*       Logic for code comparison utility - Fun Groups
+*----------------------------------------------------------------------*
+
+
+FORM z_compare_fugr USING    fp_it_fugr TYPE ty_tadir
+                    CHANGING fp_it_conop TYPE ty_conf_output.
+
+  DATA: l_objname  TYPE trobj_name,
+        l_objtype  TYPE vrsd-objtype,
+        l_fungrnm  TYPE tfdir-pname,
+        l_conf     TYPE c LENGTH 40,
+        l_tx_confl TYPE c LENGTH 40,
+        l_table    TYPE dd02l-tabname.
+
+  DATA: lit_func  TYPE TABLE OF t_tfdir,
+        lit_tftit TYPE TABLE OF tftit,
+        lit_conop TYPE TABLE OF t_conf_output,
+        lit_tadir TYPE TABLE OF t_tadir,
+        lit_fugr  TYPE TABLE OF t_tadir,
+        lit_opt   TYPE TABLE OF rfc_db_opt,
+        lit_data  TYPE TABLE OF tab512,
+        lit_fld   TYPE TABLE OF rfc_db_fld,
+
+        lwa_opt   TYPE rfc_db_opt,
+        lwa_fld   TYPE rfc_db_fld,
+        lwa_conop TYPE t_conf_output,
+        lwa_tadir TYPE t_tadir,
+        lwa_tftit TYPE tftit,
+        lwa_tfdir TYPE t_tfdir,
+        lwa_func  TYPE t_tfdir,
+        lwa_col   TYPE slis_specialcol_alv.
+
+  DATA: r_ctrfc TYPE RANGE OF rfcdes-rfcdest.
+
+  FIELD-SYMBOLS: <lfs_func>      TYPE t_tfdir,
+                 <lfs_tftit>     TYPE tftit,
+                 <lfs_fugr>      TYPE t_tadir,
+                 <lfs_rfc_confl> TYPE t_rfc_confl,
+                 <lfs_data>      TYPE tab512,
+                 <lfs_ctrfc>     LIKE LINE OF r_ctrfc.
+
+  lit_fugr[] =  fp_it_fugr[].
+
+  LOOP AT lit_fugr ASSIGNING <lfs_fugr>.
+
+    CLEAR: l_fungrnm.
+    CLEAR: lit_func, lit_tftit.
+
+*   In TFDIR-PNAME, the FG name is prepended by SAPL.
+
+    CONCATENATE c_sapl <lfs_fugr>-obj_name INTO l_fungrnm.
+    l_objtype = c_fugp.
+
+*   Select Function Module list from Source System
+
+    SELECT funcname pname
+      INTO TABLE lit_func
+      FROM tfdir
+     WHERE pname EQ l_fungrnm.
+
+    IF sy-subrc NE 0 .
+      CLEAR: lit_func.
+    ENDIF. "sy-subrc NE 0
+
+*   Select Function Module list from Target Systems
+
+    l_table = 'TFDIR'.
+
+    CLEAR: lwa_fld.
+    MOVE: 'FUNCNAME' TO  lwa_fld-fieldname,
+          '30'        TO  lwa_fld-length.
+    APPEND  lwa_fld TO lit_fld.
+
+    CLEAR: lwa_fld.
+    MOVE: 'PNAME' TO  lwa_fld-fieldname,
+          '40'        TO  lwa_fld-length.
+    APPEND  lwa_fld TO lit_fld.
+
+    CLEAR: lwa_opt.
+    CONCATENATE 'PNAME EQ ''' l_fungrnm c_comma  INTO lwa_opt-text.
+    APPEND lwa_opt TO lit_opt.
+    CLEAR: lwa_opt.
+
+    LOOP AT s_ctrfc ASSIGNING <lfs_ctrfc>.
+
+      CLEAR lit_data.
+
+      CALL FUNCTION 'RFC_READ_TABLE' DESTINATION <lfs_ctrfc>-low
+        EXPORTING
+          query_table          = l_table
+        TABLES
+          options              = lit_opt
+          fields               = lit_fld
+          data                 = lit_data
+        EXCEPTIONS
+          table_not_available  = 1
+          table_without_data   = 2
+          option_not_valid     = 3
+          field_not_valid      = 4
+          not_authorized       = 5
+          data_buffer_exceeded = 6
+          OTHERS               = 7.
+      IF sy-subrc NE 0.
+        CLEAR: lit_data.
+      ELSE.
+
+        LOOP AT lit_data ASSIGNING <lfs_data>.
+
+          IF <lfs_data> IS ASSIGNED.
+            CLEAR: lwa_func.
+            MOVE: <lfs_data>-wa+0(30) TO lwa_func-funcname.
+            MOVE: <lfs_data>-wa+30(40) TO lwa_func-pname.
+            APPEND lwa_func TO lit_func.
+          ENDIF. "<lfs_data> IS ASSIGNED.
+
+        ENDLOOP."lit_data ASSIGNING <lfs_data>.
+
+      ENDIF. "sy-subrc NE 0.
+
+    ENDLOOP. "s_ctrfc ASSIGNING <lfs_ctrfc>.
+
+    SORT lit_func BY funcname pname.
+
+    DELETE ADJACENT DUPLICATES FROM lit_func COMPARING ALL FIELDS.
+
+    IF lit_func IS NOT INITIAL.
+
+*     Get all FM texts.
+
+      SELECT spras funcname stext
+        INTO TABLE lit_tftit
+        FROM tftit
+        FOR ALL ENTRIES IN lit_func
+       WHERE spras    EQ sy-langu AND
+             funcname EQ lit_func-funcname.
+      IF sy-subrc NE 0.
+        CLEAR lit_tftit.
+      ENDIF. "sy-subrc NE 0.
+
+*   Compare each FM in the FG
+
+      LOOP AT lit_func ASSIGNING <lfs_func>.
+*
+*        CLEAR: l_conf,
+*               l_tx_confl.
+
+        PERFORM z_compare_obj USING <lfs_func>-funcname <lfs_func>-pname 'FUNC'." CHANGING l_conf l_tx_confl.
+
+        LOOP AT it_rfc_confl ASSIGNING <lfs_rfc_confl>.
+
+          CLEAR: lwa_conop.
+
+          lwa_conop-fngrp       = <lfs_fugr>-obj_name.
+          lwa_conop-obj_name    = <lfs_fugr>-obj_name.
+          lwa_conop-fname       = <lfs_func>-funcname.
+          lwa_conop-sub_obj     = <lfs_func>-funcname.
+          lwa_conop-objtyp      = 'FUNC'.
+          lwa_conop-pck         = <lfs_fugr>-devclass.
+          lwa_conop-rfcdest_s   = p_csrfc.
+          lwa_conop-sourcetr    = <lfs_rfc_confl>-sourcetr.
+          lwa_conop-sourcevr    = <lfs_rfc_confl>-sourcevr.
+          lwa_conop-sourcedt    = <lfs_rfc_confl>-sourcedt.
+          lwa_conop-sourceauth  = <lfs_rfc_confl>-sourceauth.
+          lwa_conop-rfcdest     = <lfs_rfc_confl>-rfcdest.
+          lwa_conop-targettr    = <lfs_rfc_confl>-targettr.
+          lwa_conop-targetvr    = <lfs_rfc_confl>-targetvr.
+          lwa_conop-targetdt    = <lfs_rfc_confl>-targetdt.
+          lwa_conop-targetauth  = <lfs_rfc_confl>-targetauth.
+          lwa_conop-conflict    = <lfs_rfc_confl>-conf_flag.
+          lwa_conop-tx_conflict = <lfs_rfc_confl>-conf_flag_text.
+
+          SORT lit_tftit BY funcname.
+
+          READ TABLE lit_tftit ASSIGNING <lfs_tftit>
+          WITH KEY funcname = <lfs_func>-funcname BINARY SEARCH.
+
+          IF sy-subrc EQ 0.
+            lwa_conop-objdescr = <lfs_tftit>-stext.
+          ENDIF. "sy-subrc EQ 0.
+
+
+          READ TABLE it_obtab ASSIGNING <lfs_obtab>
+          WITH KEY object = lwa_conop-objtyp BINARY SEARCH.
+
+          IF sy-subrc EQ 0.
+            lwa_conop-objtypedesc = <lfs_obtab>-text.
+          ENDIF. "sy-subrc EQ 0.
+
+          CLEAR: lwa_col.
+
+          IF lwa_conop-conflict EQ TEXT-077.
+
+            lwa_col-fieldname = 'CONFLICT'.
+            lwa_col-color-col = 5.
+            lwa_col-color-int = 1.
+            lwa_col-color-inv = 0.
+            APPEND lwa_col TO lwa_conop-coltab.
+
+          ELSEIF lwa_conop-conflict EQ TEXT-076.
+
+            lwa_col-fieldname = 'CONFLICT'.
+            lwa_col-color-col = 6.
+            lwa_col-color-int = 1.
+            lwa_col-color-inv = 0.
+            APPEND lwa_col TO lwa_conop-coltab.
+
+          ENDIF."lwa_conop-conflict IS NOT INITIAL
+
+          IF lwa_conop-tx_conflict EQ TEXT-077.
+
+            lwa_col-fieldname = 'TX_CONFLICT'.
+            lwa_col-color-col = 5.
+            lwa_col-color-int = 1.
+            lwa_col-color-inv = 0.
+            APPEND lwa_col TO lwa_conop-coltab.
+
+          ELSEIF lwa_conop-tx_conflict EQ TEXT-076.
+
+            lwa_col-fieldname = 'TX_CONFLICT'.
+            lwa_col-color-col = 6.
+            lwa_col-color-int = 1.
+            lwa_col-color-inv = 0.
+            APPEND lwa_col TO lwa_conop-coltab.
+
+          ENDIF."lwa_conop-conflict IS NOT INITIAL
+
+          APPEND lwa_conop TO lit_conop.
+
+        ENDLOOP. "it_rfc_confl ASSIGNING <lfs_rfc_confl>.
+
+      ENDLOOP. "lit_func ASSIGNING <lfs_func>.
+
+    ENDIF. "sy-subrc EQ 0 AND lit_func IS NOT INITIAL.
+
+  ENDLOOP. "fp_it_fugr ASSIGNING <lfs_fugr>.
+
+  APPEND LINES OF lit_conop TO fp_it_conop.
+
+ENDFORM.                    "z_compare_fugr
+
+*&---------------------------------------------------------------------*
+*&      Form  z_code_compare
+*&---------------------------------------------------------------------*
+*       Main logic for code comparison utility
+*----------------------------------------------------------------------*
+
+FORM z_code_compare.
+
+  TYPES: BEGIN OF lt_tfdir_l,
+           funcname  TYPE tfdir-funcname,
+           pname     TYPE tfdir-pname,
+           fngrpname TYPE tadir-obj_name,
+         END OF lt_tfdir_l,
+
+         BEGIN OF lt_incl,
+           prog TYPE tadir-obj_name,
+         END OF lt_incl.
+
+  DATA: l_objname  TYPE trobj_name,
+        l_objtype  TYPE vrsd-objtype,
+        l_fungrnm  TYPE tfdir-pname,
+        l_conf     TYPE c LENGTH 1,
+        l_tx_confl TYPE c LENGTH 1.
+
+  DATA: lit_conop   TYPE TABLE OF t_conf_output,
+        lit_conop1  LIKE lit_conop,
+        lit_fugr    TYPE TABLE OF t_tadir,
+        lit_clas    TYPE TABLE OF t_tadir,
+        lit_intf    TYPE TABLE OF t_tadir,
+        lit_prog    TYPE TABLE OF t_tadir,
+        lit_ssfo    TYPE TABLE OF t_tadir, "BSINGH1229
+        lit_tadir   TYPE TABLE OF t_tadir,
+        lit_tfdir   TYPE TABLE OF t_tfdir,
+        lit_tftit   TYPE TABLE OF tftit,
+        lit_tfdir_l TYPE TABLE OF lt_tfdir_l,
+        lit_d010    TYPE TABLE OF t_d010,
+        lit_incl    TYPE TABLE OF lt_incl,
+        lit_trdir   TYPE TABLE OF t_trdir,
+        lit_program TYPE TABLE OF lt_incl,
+
+        lwa_conop   TYPE t_conf_output,
+        lwa_col     TYPE slis_specialcol_alv,
+        lwa_tfdir   TYPE t_tfdir,
+        lwa_tadir   TYPE t_tadir,
+        lwa_tftit   TYPE tftit,
+        lwa_tfdir_l TYPE lt_tfdir_l.
+**--Remove Hotspot Changes           03/04/2017
+  DATA: lit_edit  TYPE lvc_t_styl,
+        lwa_edit  TYPE lvc_s_styl,
+        lwa_final TYPE t_conf_output,
+        lwa_sortn TYPE lvc_s_sort,
+
+        lv_index  TYPE sy-tabix,
+        lv_pos    TYPE i VALUE 1.
+**--Remove Hotspot Changes
+
+  FIELD-SYMBOLS: <lfs_func>      TYPE t_tfdir,
+                 <lfs_tftit>     TYPE tftit,
+                 <lfs_prog>      TYPE t_tadir,
+                 <lfs_rfc_confl> TYPE t_rfc_confl,
+                 <lfs_tadir>     TYPE t_tadir,
+                 <lfs_tfdir>     TYPE t_tfdir,
+                 <lfs_trdir>     TYPE t_trdir,
+                 <lfs_d010>      TYPE t_d010.
+
+* Do not proceed with there is no object name or package name
+
+  CHECK s_objnam IS NOT INITIAL OR s_pkg IS NOT INITIAL.
+
+* Report Programs Comparison
+
+  IF p_prog IS NOT INITIAL.
+
+*   Get details from TADIR
+
+    SELECT pgmid object obj_name author devclass
+      INTO TABLE lit_prog
+      FROM tadir
+      WHERE object   EQ c_prog   AND
+            obj_name IN s_objnam AND
+            delflag  NE c_x.
+
+    IF sy-subrc NE 0.
+      CLEAR lit_prog.
+    ENDIF.
+
+    IF lit_prog IS NOT INITIAL.
+
+*     If the object name is a Include, get the master program name.
+
+      SELECT master include
+        FROM d010inc
+        INTO TABLE lit_d010
+        FOR ALL ENTRIES IN lit_prog
+        WHERE include = lit_prog-obj_name.
+      IF sy-subrc EQ 0.
+        SORT lit_d010 BY include.
+      ENDIF. "sy-subrc NE 0.
+
+      SELECT name subc
+        FROM trdir
+        INTO TABLE lit_trdir
+        FOR ALL ENTRIES IN lit_prog
+        WHERE name EQ lit_prog-obj_name.
+
+      IF sy-subrc EQ 0.
+
+        LOOP AT lit_trdir ASSIGNING <lfs_trdir> WHERE subc NE 'M'. "Do not consider Module Pool
+
+          IF <lfs_trdir> IS ASSIGNED.
+
+            CLEAR: lit_incl.
+
+            IF <lfs_trdir>-subc EQ c_subc_1.
+
+              "Executable Main Program - get all include names
+
+              CALL FUNCTION 'GET_INCLUDETAB'
+                EXPORTING
+                  progname = <lfs_trdir>-name
+                TABLES
+                  incltab  = lit_incl.
+
+              APPEND LINES OF lit_incl TO lit_program.
+
+            ELSEIF <lfs_trdir>-subc EQ c_subc_i.
+
+              "Include Program - get the main program and other includes of this main program
+
+              READ TABLE lit_d010 ASSIGNING <lfs_d010>
+              WITH KEY include = <lfs_trdir>-name BINARY SEARCH.
+
+              IF sy-subrc EQ 0.
+
+                CALL FUNCTION 'GET_INCLUDETAB'
+                  EXPORTING
+                    progname = <lfs_d010>-master "this is the main program of the include
+                  TABLES
+                    incltab  = lit_incl.
+
+*               Remove the include entered on the screen
+
+                DELETE TABLE lit_incl WITH TABLE KEY prog = <lfs_d010>-include.
+
+                APPEND LINES OF lit_incl TO lit_program.
+                APPEND <lfs_d010>-master TO lit_program.
+
+              ENDIF. "sy-subrc EQ 0
+
+            ENDIF. "lfs_trdir>-subc EQ '1'.
+
+          ENDIF. "<lfs_trdir> IS ASSIGNED.
+
+        ENDLOOP. "AT lit_trdir ASSIGNING <lfs_trdir> WHERE subc NE 'M'
+
+      ENDIF. "sy-subrc EQ 0.
+
+      IF lit_program IS NOT INITIAL.
+
+        SELECT pgmid object obj_name author devclass
+     APPENDING TABLE lit_prog
+         FROM  tadir
+          FOR  ALL ENTRIES IN lit_program
+        WHERE  object   EQ c_prog   AND
+               obj_name EQ lit_program-prog AND
+               delflag NE c_x.
+
+        IF sy-subrc EQ 0.
+
+        ENDIF. "sy-subrc EQ 0.
+
+      ENDIF. "lit_program IS NOT INITIAL
+
+      PERFORM z_compare_prog       USING lit_prog CHANGING lit_conop.
+
+    ENDIF. "lit_prog IS NOT INITIAL.
+
+    IF lit_conop IS NOT INITIAL.
+
+      CLEAR:it_fieldcat,
+            it_sort.
+      REFRESH: it_fcatn[].
+
+      PERFORM z_fieldcat_sc USING 'PRGNAME'     'Program Name'            'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'TITLE'       'Report Title'            'LIT_CONOP' 24 c_x space .
+      PERFORM z_fieldcat_sc USING 'PCK'         'Package at Source'       'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'RFCDEST_S'   'Source RFC Destination'  'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'SOURCETR'    'Source Transport #'      'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'SOURCEAUTH'  'User (at Source)'        'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'RFCDEST'     'Target RFC Destination'  'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'TARGETTR'    'Target Transport #'      'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'TARGETAUTH'  'User (at Target)'        'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'CONFLICT'    'Conflict in Code'        'LIT_CONOP' 10 c_x c_x.
+      PERFORM z_fieldcat_sc USING 'TX_CONFLICT' 'Conflict in Texts'       'LIT_CONOP' 10 c_x c_x.
+
+*     Sort by Program Name
+
+      CLEAR: lwa_sortn.
+
+      MOVE: '1'         TO lwa_sortn-spos,
+            'PRGNAME'   TO lwa_sortn-fieldname.
+*            'LIT_CONOP' TO lwa_sortn-tabname.
+
+      APPEND lwa_sortn TO it_sortn.
+
+      CLEAR: it_conop.
+
+      it_conop[] = lit_conop[].
+**--Remove Hotspot for 'No Difference' Text in CONFLICT Column    "03/04/2017 VMANIBAB
+      LOOP AT lit_conop INTO lwa_final.
+        lv_index = sy-tabix .
+        REFRESH : lit_edit[].
+
+        IF lwa_final-conflict EQ TEXT-077 OR
+           lwa_final-conflict EQ TEXT-078 OR
+           lwa_final-conflict EQ TEXT-079 .
+          lwa_edit-fieldname = 'CONFLICT'.
+          lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+          INSERT lwa_edit INTO TABLE lit_edit.
+        ENDIF.
+        IF lwa_final-tx_conflict EQ TEXT-077 OR
+           lwa_final-tx_conflict EQ TEXT-078 OR
+           lwa_final-tx_conflict EQ TEXT-079 .
+          lwa_edit-fieldname = 'TX_CONFLICT'.
+          lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+          INSERT lwa_edit INTO TABLE lit_edit.
+        ENDIF.
+        IF lit_edit[] IS NOT INITIAL.
+          INSERT LINES OF lit_edit INTO TABLE lwa_final-style.
+          MODIFY lit_conop INDEX lv_index FROM lwa_final TRANSPORTING style.
+        ENDIF.
+
+      ENDLOOP.
+*      PERFORM z_output_alv TABLES lit_conop.
+      PERFORM z_output_alv_sc TABLES lit_conop.
+*--Remove Hotspot for 'No Difference' Text in CONFLICT Column
+    ELSE.
+
+      MESSAGE 'No data found' TYPE 'E'.
+
+    ENDIF. "lit_conop is NOT INITIAL.
+
+  ENDIF. "p_prog IS NOT INITIAL.
+
+* Function Module Comparison
+
+  IF p_func IS NOT INITIAL.
+
+    l_objtype = c_func.
+
+    SELECT funcname pname
+          INTO TABLE lit_tfdir
+          FROM tfdir
+         WHERE funcname IN s_objnam.
+
+    IF sy-subrc NE 0 .
+      CLEAR: lit_tfdir.
+    ENDIF. " sy-subrc NE 0 .
+
+    CLEAR:lit_tfdir_l.
+
+    LOOP AT lit_tfdir ASSIGNING <lfs_tfdir>.
+
+      IF <lfs_tfdir> IS ASSIGNED.
+
+        CLEAR: lwa_tfdir_l.
+        lwa_tfdir_l-funcname = <lfs_tfdir>-funcname.
+        lwa_tfdir_l-pname = <lfs_tfdir>-pname.
+        lwa_tfdir_l-fngrpname = <lfs_tfdir>-pname+4(36).
+        APPEND lwa_tfdir_l TO lit_tfdir_l.
+
+      ENDIF."<lfs_tfdir> IS ASSIGNED
+
+    ENDLOOP."lit_tfdir ASSIGNING <lfs_tfdir>
+
+    CLEAR: lit_tadir.
+
+    IF lit_tfdir_l IS NOT INITIAL.
+
+      SELECT pgmid object obj_name author devclass
+        FROM tadir
+        INTO TABLE lit_tadir
+         FOR ALL ENTRIES IN lit_tfdir_l
+       WHERE object EQ c_fugp
+         AND obj_name EQ lit_tfdir_l-fngrpname.
+
+      IF sy-subrc NE 0.
+        CLEAR: lit_tadir.
+      ELSE.
+        SORT lit_tadir BY object obj_name.
+      ENDIF. "sy-subrc NE 0
+
+      SELECT spras funcname stext
+          INTO TABLE lit_tftit
+          FROM tftit
+         WHERE spras    EQ sy-langu AND
+               funcname IN s_objnam.
+
+      IF sy-subrc NE 0 .
+        CLEAR lit_tftit.
+      ELSE.
+        SORT lit_tftit BY funcname.
+      ENDIF."sy-subrc NE 0
+
+    ENDIF. "lit_tfdir IS NOT INITIAL
+
+*    SELECT pgmid object obj_name author devclass
+*      FROM tadir
+*      INTO TABLE lit_tadir
+*     WHERE object = c_fugp
+*      AND  obj_name EQ lwa_tfdir-pname+4(36).
+
+*    IF sy-subrc NE 0.
+*      CLEAR: lwa_tadir.
+*    ENDIF. "sy-subrc NE 0
+
+*    SELECT SINGLE spras funcname stext
+*          INTO lwa_tftit
+*          FROM tftit
+*         WHERE spras    EQ sy-langu AND
+*               funcname EQ l_objname.
+*
+*    IF sy-subrc NE 0 .
+*      CLEAR lwa_tftit.
+*    ENDIF."sy-subrc NE 0
+
+    SORT lit_tadir BY object obj_name.
+
+    LOOP AT lit_tfdir ASSIGNING <lfs_tfdir>.
+
+      IF <lfs_tfdir> IS ASSIGNED.
+
+        PERFORM z_compare_obj USING <lfs_tfdir>-funcname <lfs_tfdir>-pname l_objtype.
+
+        LOOP AT it_rfc_confl ASSIGNING <lfs_rfc_confl>.
+
+          IF <lfs_rfc_confl> IS ASSIGNED.
+
+            CLEAR: lwa_conop.
+
+            lwa_conop-fname       = <lfs_tfdir>-funcname.
+            lwa_conop-objtyp      = l_objtype.
+            lwa_conop-rfcdest_s   = p_csrfc.
+            lwa_conop-sourcetr    = <lfs_rfc_confl>-sourcetr.
+            lwa_conop-sourcevr    = <lfs_rfc_confl>-sourcevr.
+            lwa_conop-sourcedt    = <lfs_rfc_confl>-sourcedt.
+            lwa_conop-sourceauth    = <lfs_rfc_confl>-sourceauth.
+
+            lwa_conop-rfcdest     = <lfs_rfc_confl>-rfcdest.
+            lwa_conop-targettr    = <lfs_rfc_confl>-targettr.
+            lwa_conop-targetvr    = <lfs_rfc_confl>-targetvr.
+            lwa_conop-targetdt    = <lfs_rfc_confl>-targetdt.
+            lwa_conop-targetauth    = <lfs_rfc_confl>-targetauth.
+            lwa_conop-conflict    = <lfs_rfc_confl>-conf_flag.
+            lwa_conop-tx_conflict = <lfs_rfc_confl>-conf_flag_text.
+            lwa_conop-fngrp       = <lfs_tfdir>-pname+4(36).
+
+            SORT lit_tadir BY object obj_name.
+
+            READ TABLE lit_tadir ASSIGNING <lfs_tadir> WITH KEY
+            object = c_fugp obj_name = <lfs_tfdir>-pname+4(36) BINARY SEARCH.
+
+            IF sy-subrc EQ 0 AND <lfs_tadir> IS ASSIGNED.
+              lwa_conop-pck = <lfs_tadir>-devclass.
+            ELSE.
+              CLEAR lwa_conop-pck.
+            ENDIF. "sy-subrc EQ 0
+
+            READ TABLE lit_tftit ASSIGNING <lfs_tftit>
+            WITH KEY spras = sy-langu funcname = <lfs_tfdir>-funcname BINARY SEARCH.
+
+            IF  sy-subrc EQ 0 AND <lfs_tftit> IS ASSIGNED.
+              lwa_conop-objdescr = <lfs_tftit>-stext.
+            ELSE.
+              CLEAR lwa_conop-objdescr.
+            ENDIF. "sy-subrc EQ 0 AND <lfs_tftit> IS ASSIGNED.
+
+
+            READ TABLE it_obtab ASSIGNING <lfs_obtab>
+            WITH KEY object = l_objtype BINARY SEARCH..
+
+            IF sy-subrc EQ 0.
+              lwa_conop-objtypedesc = <lfs_obtab>-text.
+            ENDIF. "sy-subrc EQ 0.
+
+            CLEAR: lwa_col.
+
+            IF lwa_conop-conflict EQ TEXT-077.
+
+              lwa_col-fieldname = 'CONFLICT'.
+              lwa_col-color-col = 5.
+              lwa_col-color-int = 1.
+              lwa_col-color-inv = 0.
+              APPEND lwa_col TO lwa_conop-coltab.
+
+            ELSEIF lwa_conop-conflict EQ TEXT-076.
+
+              lwa_col-fieldname = 'CONFLICT'.
+              lwa_col-color-col = 6.
+              lwa_col-color-int = 1.
+              lwa_col-color-inv = 0.
+              APPEND lwa_col TO lwa_conop-coltab.
+
+            ENDIF."lwa_conop-conflict IS NOT INITIAL
+
+            IF lwa_conop-tx_conflict EQ TEXT-077.
+
+              lwa_col-fieldname = 'TX_CONFLICT'.
+              lwa_col-color-col = 5.
+              lwa_col-color-int = 1.
+              lwa_col-color-inv = 0.
+              APPEND lwa_col TO lwa_conop-coltab.
+
+            ELSEIF lwa_conop-tx_conflict EQ TEXT-076.
+
+              lwa_col-fieldname = 'TX_CONFLICT'.
+              lwa_col-color-col = 6.
+              lwa_col-color-int = 1.
+              lwa_col-color-inv = 0.
+              APPEND lwa_col TO lwa_conop-coltab.
+
+            ENDIF."lwa_conop-conflict IS NOT INITIAL
+
+            APPEND lwa_conop TO lit_conop.
+
+          ENDIF."<lfs_rfc_confl> IS ASSIGNED
+
+        ENDLOOP. "it_rfc_confl ASSIGNING <lfs_rfc_confl>.
+
+      ENDIF."<lfs_tfdir> IS ASSIGNED
+
+    ENDLOOP."lit_tfdir ASSIGNING <lfs_tfdir>
+
+    IF lit_conop IS NOT INITIAL.
+
+      CLEAR:  it_fieldcat,
+              it_sort.
+      REFRESH : it_fcatn[], it_sortn[].
+
+      PERFORM z_fieldcat_sc USING 'FNAME'       'Function Name'               'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'OBJDESCR'    'Function Module Description' 'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'FNGRP'       'Function Group'              'LIT_CONOP' 24 c_x space .
+      PERFORM z_fieldcat_sc USING 'PCK'         'Package at Source'           'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'RFCDEST_S'   'Source RFC Destination'      'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'SOURCETR'    'Source Transport #'          'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'SOURCEAUTH'  'User (at Source)'            'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'RFCDEST'     'Target RFC Destination'      'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'TARGETTR'    'Target Transport #'          'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'TARGETAUTH'  'User (at Target)'            'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'CONFLICT'    'Conflict in Code'            'LIT_CONOP' 10 c_x c_x .
+      PERFORM z_fieldcat_sc USING 'TX_CONFLICT' 'Conflict in Texts'           'LIT_CONOP' 10 c_x c_x.
+
+      CLEAR: lwa_sortn.
+      MOVE: '1'         TO lwa_sortn-spos,
+            'FNAME'     TO lwa_sortn-fieldname.
+*            'LIT_CONOP' TO wa_sort-tabname.
+
+      APPEND lwa_sortn TO it_sortn.
+
+      CLEAR: lwa_sortn.
+
+      MOVE: '2'         TO lwa_sortn-spos,
+            'RFCDEST_S' TO lwa_sortn-fieldname.
+*            'LIT_CONOP' TO wa_sort-tabname.
+
+      APPEND lwa_sortn TO it_sortn.
+
+      it_conop[] = lit_conop[].
+**--Remove Hotspot for 'No Difference' Text in CONFLICT Column     03/04/2017 VMANIBAB
+      LOOP AT lit_conop INTO lwa_final.
+        lv_index = sy-tabix .
+        REFRESH : lit_edit[].
+
+        IF lwa_final-conflict EQ TEXT-077 OR
+           lwa_final-conflict EQ TEXT-078 OR
+           lwa_final-conflict EQ TEXT-079 .
+          lwa_edit-fieldname = 'CONFLICT'.
+          lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+          INSERT lwa_edit INTO TABLE lit_edit.
+        ENDIF.
+        IF lwa_final-tx_conflict EQ TEXT-077 OR
+           lwa_final-tx_conflict EQ TEXT-078 OR
+           lwa_final-tx_conflict EQ TEXT-079 .
+          lwa_edit-fieldname = 'TX_CONFLICT'.
+          lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+          INSERT lwa_edit INTO TABLE lit_edit.
+        ENDIF.
+        IF lit_edit[] IS NOT INITIAL.
+          INSERT LINES OF lit_edit INTO TABLE lwa_final-style.
+          MODIFY lit_conop INDEX lv_index FROM lwa_final TRANSPORTING style.
+        ENDIF.
+
+      ENDLOOP.
+
+*      PERFORM z_output_alv TABLES lit_conop.
+      PERFORM z_output_alv_sc TABLES lit_conop.
+**--Remove Hotspot for 'No Difference' Text in CONFLICT Column
+    ELSE.
+      MESSAGE 'No data found' TYPE 'E'.
+    ENDIF. "lit_conop IS NOT INITIAL
+
+  ENDIF. "p_func IS NOT INITIAL.
+
+* Function Group Comparison
+
+  IF p_fugr IS NOT INITIAL.
+
+    SELECT pgmid object obj_name author devclass
+     FROM tadir
+     INTO TABLE lit_fugr
+    WHERE object   EQ c_fugp
+     AND  obj_name IN s_objnam.
+
+    IF sy-subrc EQ 0.
+      PERFORM z_compare_fugr USING lit_fugr CHANGING lit_conop.
+    ENDIF.
+
+    IF lit_conop IS NOT INITIAL.
+
+      CLEAR: it_fieldcat,
+               it_sort.
+      REFRESH : it_fcatn[], it_sortn[].
+
+      PERFORM z_fieldcat_sc USING 'FNGRP'       'Function Group'              'LIT_CONOP' 24 c_x space .
+      PERFORM z_fieldcat_sc USING 'FNAME'       'Function Name'               'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'OBJDESCR'    'Function Module Description' 'LIT_CONOP' 18 c_x space   .
+      PERFORM z_fieldcat_sc USING 'PCK'         'Package at Source'           'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'RFCDEST_S'   'Source RFC Destination'      'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'SOURCETR'    'Source Transport #'          'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'SOURCEAUTH'  'User (at Source)'            'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'RFCDEST'     'Target RFC Destination'      'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'TARGETTR'    'Target Transport #'          'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'TARGETAUTH'  'User (at Target)'            'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'CONFLICT'    'Conflict in Code'            'LIT_CONOP' 10 c_x c_x .
+      PERFORM z_fieldcat_sc USING 'TX_CONFLICT' 'Conflict in Texts'           'LIT_CONOP' 10 c_x c_x.
+
+
+      CLEAR: lwa_sortn.
+
+      MOVE: '1'         TO lwa_sortn-spos,
+            'FNGRP'     TO lwa_sortn-fieldname.
+*            'LIT_CONOP' TO wa_sort-tabname.
+
+      APPEND lwa_sortn TO it_sortn.
+
+      it_conop[] = lit_conop[].
+**--Remove Hotspot for 'No Difference' Text in CONFLICT Column   03/04/2017 VMANIBAB
+      LOOP AT lit_conop INTO lwa_final.
+        lv_index = sy-tabix .
+        REFRESH : lit_edit[].
+
+        IF lwa_final-conflict EQ TEXT-077 OR
+           lwa_final-conflict EQ TEXT-078 OR
+           lwa_final-conflict EQ TEXT-079 .
+          lwa_edit-fieldname = 'CONFLICT'.
+          lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+          INSERT lwa_edit INTO TABLE lit_edit.
+        ENDIF.
+        IF lwa_final-tx_conflict EQ TEXT-077 OR
+           lwa_final-tx_conflict EQ TEXT-078 OR
+           lwa_final-tx_conflict EQ TEXT-079 .
+          lwa_edit-fieldname = 'TX_CONFLICT'.
+          lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+          INSERT lwa_edit INTO TABLE lit_edit.
+        ENDIF.
+        IF lit_edit[] IS NOT INITIAL.
+          INSERT LINES OF lit_edit INTO TABLE lwa_final-style.
+          MODIFY lit_conop INDEX lv_index FROM lwa_final TRANSPORTING style.
+        ENDIF.
+
+      ENDLOOP.
+
+*      PERFORM z_output_alv TABLES lit_conop.
+      PERFORM z_output_alv_sc TABLES lit_conop.
+**--Remove Hotspot for 'No Difference' Text in CONFLICT Column
+
+    ELSE.
+      MESSAGE 'No data Found' TYPE 'E'.
+    ENDIF."lit_conop IS NOT INITIAL.
+
+  ENDIF. "p_fugr IS NOT INITIAL.
+
+* Class Comparison
+
+  IF p_clas IS NOT INITIAL.
+
+    CLEAR: lit_conop, lit_clas.
+
+    SELECT pgmid object obj_name author devclass
+      INTO TABLE lit_clas
+      FROM tadir
+     WHERE object   EQ c_clas   AND
+           obj_name IN s_objnam AND
+           delflag  NE c_x.
+    IF sy-subrc NE 0.
+      CLEAR: lit_clas.
+    ENDIF.
+
+    PERFORM z_compare_clas USING lit_clas CHANGING lit_conop.
+
+    IF lit_conop IS NOT INITIAL.
+
+      CLEAR:it_fieldcat,
+              it_sort.
+      REFRESH : it_fcatn[], it_sortn[].
+      PERFORM z_fieldcat_sc USING 'CLASS'       'Class Name'               'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'METHNAME'    'Method Name'              'LIT_CONOP' 24 c_x space .
+      PERFORM z_fieldcat_sc USING 'PCK'         'Package at Source'        'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'RFCDEST_S'   'Source RFC Destination'   'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'SOURCETR'    'Source Transport #'       'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'SOURCEAUTH'  'User (at Source)'         'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'RFCDEST'     'Target RFC Destination'   'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'TARGETTR'    'Target Transport #'       'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'TARGETAUTH'  'User (at Target)'         'LIT_CONOP' 18 c_x space .
+      PERFORM z_fieldcat_sc USING 'CONFLICT'    'Conflict in Code'         'LIT_CONOP' 10 c_x c_x .
+      PERFORM z_fieldcat_sc USING 'TX_CONFLICT' 'Conflict in Texts'        'LIT_CONOP' 10 c_x c_x.
+
+      CLEAR: lwa_sortn.
+
+      MOVE: '1'          TO lwa_sortn-spos,
+            'CLASS'      TO lwa_sortn-fieldname.
+*            'LIT_CONOP'  TO wa_sort-tabname.
+
+      APPEND lwa_sortn TO it_sortn.
+      CLEAR: lwa_sortn.
+
+      MOVE: '2'          TO lwa_sortn-spos,
+            'METHNAME'   TO lwa_sortn-fieldname.
+*            'LIT_CONOP'  TO wa_sort-tabname.
+
+      APPEND lwa_sortn TO it_sortn.
+      CLEAR: lwa_sortn.
+
+      MOVE: '2'         TO lwa_sortn-spos,
+            'RFCDEST_S' TO lwa_sortn-fieldname.
+*            'LIT_CONOP' TO wa_sort-tabname.
+
+      APPEND lwa_sortn TO it_sortn.
+
+      it_conop[] = lit_conop[].
+
+**--Remove Hotspot for 'No Difference' Text in CONFLICT Column   03/04/2017 VMANIBAB
+      LOOP AT lit_conop INTO lwa_final.
+        lv_index = sy-tabix .
+        REFRESH : lit_edit[].
+
+        IF lwa_final-conflict EQ TEXT-077 OR
+           lwa_final-conflict EQ TEXT-078 OR
+           lwa_final-conflict EQ TEXT-079 .
+          lwa_edit-fieldname = 'CONFLICT'.
+          lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+          INSERT lwa_edit INTO TABLE lit_edit.
+        ENDIF.
+        IF lwa_final-tx_conflict EQ TEXT-077 OR
+           lwa_final-tx_conflict EQ TEXT-078 OR
+           lwa_final-tx_conflict EQ TEXT-079 .
+          lwa_edit-fieldname = 'TX_CONFLICT'.
+          lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+          INSERT lwa_edit INTO TABLE lit_edit.
+        ENDIF.
+        IF lit_edit[] IS NOT INITIAL.
+          INSERT LINES OF lit_edit INTO TABLE lwa_final-style.
+          MODIFY lit_conop INDEX lv_index FROM lwa_final TRANSPORTING style.
+        ENDIF.
+
+      ENDLOOP.
+
+*      PERFORM z_output_alv TABLES lit_conop.
+      PERFORM z_output_alv_sc TABLES lit_conop.
+**--Remove Hotspot for 'No Difference' Text in CONFLICT Column
+
+    ELSE.
+      MESSAGE 'No data found' TYPE 'E'.
+
+    ENDIF. "lit_conop IS NOT INITIAL
+
+  ENDIF."p_clas IS NOT INITIAL
+
+  IF p_pck IS NOT INITIAL AND s_pkg IS NOT INITIAL.
+
+*   For the given package, get all repository objects from TADIR
+*
+
+    CLEAR: lit_tadir.
+
+    SELECT pgmid object obj_name author devclass
+        FROM tadir
+        INTO TABLE lit_tadir
+       WHERE devclass IN s_pkg AND
+             ( obj_name LIKE 'Z%' OR obj_name LIKE 'Y%' ) AND
+*             ( object EQ 'PROG' OR object EQ 'CLAS' OR object EQ 'FUGR' ) AND
+             ( object EQ 'PROG' OR object EQ 'CLAS' OR object EQ 'FUGR' OR object EQ 'SSFO' ) AND "BSINGH1229 - Added for smartforms
+               delflag NE c_x AND
+                devclass NE '$TMP' . "BSINGH1229 - Added to ensure we dont pick up local objects
+
+    IF sy-subrc NE 0.
+      CLEAR: lit_tadir.
+    ENDIF. "sy-subrc NE 0
+
+    SORT lit_tadir BY pgmid object.
+
+*   Create separate tables for Function Groups/Classes/Programs
+
+    CLEAR: lit_fugr,
+           lit_clas,
+           lit_prog,
+           lit_ssfo. "BSINGH1229
+
+    lit_fugr[] = lit_tadir[].
+    DELETE lit_fugr WHERE object NE 'FUGR'.
+
+    lit_clas[] = lit_tadir[].
+    DELETE lit_clas WHERE object NE 'CLAS'.
+
+    lit_prog[] = lit_tadir[].
+    DELETE lit_prog WHERE object NE 'PROG'.
+
+    lit_ssfo[] = lit_tadir[]. "BSINGH1229
+    DELETE lit_ssfo WHERE object NE 'SSFO'.  "BSINGH1229
+
+*   Process Function Groups
+
+    IF lit_fugr IS NOT INITIAL.
+      PERFORM z_compare_fugr USING lit_fugr CHANGING lit_conop.
+    ENDIF. "lit_fugr IS NOT INITIAL
+
+*   Process Classes
+    IF lit_clas IS NOT INITIAL.
+      PERFORM z_compare_clas USING lit_clas CHANGING lit_conop.
+    ENDIF. "lit_clas IS NOT INITIAL.
+
+*   Process Programs
+    IF lit_prog IS NOT INITIAL.
+      PERFORM z_compare_prog USING lit_prog CHANGING lit_conop.
+    ENDIF. "lit_prog IS NOT INITIAL.
+
+**   Process Smartforms
+*    IF lit_ssfo IS NOT INITIAL.
+*      PERFORM z_compare_ssfo USING lit_ssfo CHANGING lit_conop.
+*    ENDIF. "lit_prog IS NOT INITIAL.
+
+    CLEAR:it_fieldcat,
+          it_sort.
+    REFRESH: it_fcatn[], it_sortn[].
+    PERFORM z_fieldcat_sc USING 'OBJ_NAME'    'Object Name'             'LIT_CONOP' 18 c_x space .
+    PERFORM z_fieldcat_sc USING 'SUB_OBJ'     'Sub Object Name'         'LIT_CONOP' 18 c_x space .
+    PERFORM z_fieldcat_sc USING 'OBJTYPEDESC' 'Object Type Description' 'LIT_CONOP' 24 c_x space .
+    PERFORM z_fieldcat_sc USING 'PCK'         'Package at Source'       'LIT_CONOP' 18 c_x space .
+    PERFORM z_fieldcat_sc USING 'AUTHOR'      'Author at Source'        'LIT_CONOP' 18 c_x space .
+    PERFORM z_fieldcat_sc USING 'RFCDEST_S'   'Source RFC Destination'  'LIT_CONOP' 18 c_x space .
+    PERFORM z_fieldcat_sc USING 'SOURCETR'    'Source Transport #'      'LIT_CONOP' 18 c_x space .
+    PERFORM z_fieldcat_sc USING 'RFCDEST'     'Target RFC Destination'  'LIT_CONOP' 18 c_x space .
+    PERFORM z_fieldcat_sc USING 'TARGETTR'    'Target Transport #'      'LIT_CONOP' 18 c_x space .
+    PERFORM z_fieldcat_sc USING 'CONFLICT'    'Conflict in Code'        'LIT_CONOP' 10 c_x c_x   .
+    PERFORM z_fieldcat_sc USING 'TX_CONFLICT' 'Conflict in Texts'       'LIT_CONOP' 10 c_x c_x.
+
+    CLEAR lwa_sortn.
+    MOVE: '1'            TO lwa_sortn-spos,
+          'OBJTYPEDESC'  TO lwa_sortn-fieldname.
+*          'LIT_CONOP'    TO wa_sort-tabname.
+
+    APPEND lwa_sortn TO it_sortn.
+
+    it_conop[] = lit_conop[].
+
+**--Remove Hotspot for 'No Difference' Text in CONFLICT Column   03/04/2017 VMANIBAB
+    LOOP AT lit_conop INTO lwa_final.
+      lv_index = sy-tabix .
+      REFRESH : lit_edit[].
+
+      IF lwa_final-conflict EQ TEXT-077 OR
+         lwa_final-conflict EQ TEXT-078 OR
+         lwa_final-conflict EQ TEXT-079 .
+        lwa_edit-fieldname = 'CONFLICT'.
+        lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+        INSERT lwa_edit INTO TABLE lit_edit.
+      ENDIF.
+      IF lwa_final-tx_conflict EQ TEXT-077 OR
+         lwa_final-tx_conflict EQ TEXT-078 OR
+         lwa_final-tx_conflict EQ TEXT-079 .
+        lwa_edit-fieldname = 'TX_CONFLICT'.
+        lwa_edit-style = cl_gui_alv_grid=>mc_style_hotspot_no.
+        INSERT lwa_edit INTO TABLE lit_edit.
+      ENDIF.
+      IF lit_edit[] IS NOT INITIAL.
+        INSERT LINES OF lit_edit INTO TABLE lwa_final-style.
+        MODIFY lit_conop INDEX lv_index FROM lwa_final TRANSPORTING style.
+      ENDIF.
+
+    ENDLOOP.
+
+*      PERFORM z_output_alv TABLES lit_conop.
+    PERFORM z_output_alv_sc TABLES lit_conop.
+**--Remove Hotspot for 'No Difference' Text in CONFLICT Column
+
+  ENDIF. "p_pck IS NOT INITIAL AND s_pkg IS NOT INITIAL
+
+
+ENDFORM.   "z_code_compare
+
+*&---------------------------------------------------------------------*
+*&      Form  Z_VALIDATE_CODECOMP
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM z_validate_codecomp.
+
+* Types
+
+  TYPES: BEGIN OF lty_tadir,
+           pgmid    TYPE pgmid,
+           object   TYPE trobjtype,
+           obj_name TYPE sobj_name,
+           delflag  TYPE objdelflag,
+         END OF lty_tadir,
+
+         BEGIN OF lty_rfcdes,
+           rfcdest TYPE rfcdest,
+           rfctype TYPE rfctype_d,
+         END OF lty_rfcdes,
+
+         BEGIN OF lty_package,
+           devclass TYPE devclass,
+         END OF lty_package.
+
+* Internal Tables and Work Area
+
+  DATA: lit_tadir   TYPE STANDARD TABLE OF lty_tadir,
+        lwa_tadir   TYPE                   lty_tadir,
+        lit_rfcdest TYPE STANDARD TABLE OF lty_rfcdes,
+        lit_package TYPE STANDARD TABLE OF lty_package,
+        lit_fm      TYPE TABLE OF rs38l_fnam.
+
+  DATA: r_ctrfc TYPE RANGE OF rfcdes-rfcdest,
+        r_obj   TYPE RANGE OF trobj_name,
+        r_pkg   TYPE RANGE OF tadir-devclass.
+
+  FIELD-SYMBOLS: <lfs_ctrfc> LIKE LINE OF r_ctrfc,
+                 <lfs_obj>   LIKE LINE OF r_obj,
+                 <lfs_pkg>   LIKE LINE OF r_pkg.
+
+* Constants
+
+  CONSTANTS: lc_pgmid(4) TYPE c VALUE 'R3TR',
+             lc_prog(4)  TYPE c VALUE 'PROG',
+             lc_clas(4)  TYPE c VALUE 'CLAS',
+             lc_fugr(4)  TYPE c VALUE 'FUGR',
+             lc_intf(4)  TYPE c VALUE 'INTF',
+             lc_e(1)     TYPE c VALUE 'E'.
+
+* Check if Program Name/Class NAme/Interface Name/Function Group Name is selected
+  IF p_prog = abap_true OR p_func  = abap_true OR
+    p_clas  = abap_true OR p_fugr  = abap_true.
+
+    IF sy-ucomm EQ space OR sy-ucomm EQ 'ONLI'.
+*Object Name
+      IF s_objnam IS INITIAL.
+        MESSAGE TEXT-027 TYPE 'E'." DISPLAY LIKE 'E'.
+      ENDIF.
+*Source RFC Destination
+      IF p_csrfc IS INITIAL.
+        MESSAGE TEXT-028 TYPE 'E'." DISPLAY LIKE 'E'.
+      ENDIF.
+*Target RFC Destination
+      IF s_ctrfc IS INITIAL.
+        MESSAGE TEXT-029 TYPE 'E' ."DISPLAY LIKE 'E'.
+      ENDIF.
+
+    ENDIF. "sy-ucomm EQ 'ONLI'.
+
+*   Check if Object Name, Source RFC Destination and Target RFC Destination is blank or not
+
+    IF s_objnam IS NOT INITIAL.
+
+      LOOP AT s_objnam ASSIGNING <lfs_obj>.
+
+        IF <lfs_obj> IS ASSIGNED.
+
+          IF <lfs_obj>-low CA '*\{}[];:<>,)(*&^%$#@!'.
+            MESSAGE 'Name cannot have special characters' TYPE 'E'.
+          ENDIF.
+
+        ENDIF. "<lfs_obj> IS ASSIGNED
+
+      ENDLOOP."s_objnam ASSIGNING <lfs_obj>
+
+
+*     Validate Program Name
+      IF p_prog = abap_true.
+
+        SELECT pgmid object obj_name delflag
+          FROM tadir
+          INTO TABLE lit_tadir
+          WHERE object EQ lc_prog AND
+                obj_name IN s_objnam
+                AND delflag NE c_x.
+
+        IF sy-subrc EQ 0.
+          SORT lit_tadir.
+        ELSE.
+          MESSAGE 'No such program exists' TYPE 'E'."DISPLAY LIKE 'E'.
+        ENDIF."sy-subrc EQ 0.
+
+*        READ TABLE lit_tadir INTO lwa_tadir WITH KEY delflag = c_x.
+*        IF sy-subrc EQ 0.
+*          MESSAGE text-021 TYPE 'E'."DISPLAY LIKE 'E'.
+*        ENDIF.
+      ENDIF. "p_prog = abap_true.
+
+* Validate Class
+      IF p_clas = abap_true.
+
+        SELECT pgmid object obj_name delflag
+          FROM tadir
+          INTO TABLE lit_tadir
+          WHERE "pgmid EQ lc_pgmid AND
+                object EQ lc_clas AND
+                obj_name IN s_objnam
+                AND delflag NE c_x.
+
+        IF sy-subrc EQ 0.
+          SORT lit_tadir.
+        ELSE.
+          MESSAGE 'No such class exists' TYPE 'E'."DISPLAY LIKE 'E'.
+        ENDIF.
+
+*        READ TABLE lit_tadir INTO lwa_tadir WITH KEY delflag = c_x.
+*        IF sy-subrc EQ 0.
+*          MESSAGE text-021 TYPE 'E'." DISPLAY LIKE 'E'.
+*        ENDIF.
+      ENDIF.
+*Validate Interface
+*      IF p_intf = abap_true.
+*
+*        SELECT pgmid object obj_name delflag
+*          FROM tadir
+*          INTO TABLE lit_tadir
+*          WHERE pgmid EQ lc_pgmid AND object EQ lc_intf AND obj_name EQ p_objnam.
+*
+*        IF sy-subrc EQ 0.
+*          SORT lit_tadir.
+*        ENDIF.
+*
+*        READ TABLE lit_tadir INTO lwa_tadir WITH KEY delflag = c_x.
+*        IF sy-subrc EQ 0.
+*          MESSAGE text-021 TYPE 'E'." DISPLAY LIKE 'E'.
+*        ENDIF.
+*      ENDIF.
+*Validate Function Group
+      IF p_fugr = abap_true.
+
+        SELECT pgmid object obj_name delflag
+          FROM tadir
+          INTO TABLE lit_tadir
+          WHERE "pgmid EQ lc_pgmid AND
+          object EQ lc_fugr AND
+          obj_name IN s_objnam AND delflag NE c_x.
+
+        IF sy-subrc EQ 0.
+          SORT lit_tadir.
+        ELSE.
+          MESSAGE 'No such function group exists' TYPE 'E'."DISPLAY LIKE 'E'.
+        ENDIF.
+
+*        READ TABLE lit_tadir INTO lwa_tadir WITH KEY delflag = c_x.
+*        IF sy-subrc EQ 0.
+*          MESSAGE text-021 TYPE 'E'." DISPLAY LIKE 'E'.
+*        ENDIF.
+      ENDIF.
+*Validate Function Module
+      IF p_func = abap_true.
+
+        SELECT funcname
+          FROM tfdir
+          INTO TABLE lit_fm
+          WHERE funcname IN s_objnam.
+        IF sy-subrc NE 0.
+          MESSAGE TEXT-032 TYPE 'E'." DISPLAY LIKE 'E'.
+        ENDIF.
+
+      ENDIF.
+*If Object Name, Source RFC Destination and Target RFC Destination is not entered
+*   else.  "MOD-001 commented this line
+    ENDIF.    "MOD-001 added this line
+  ENDIF.
+
+*   Check if Package Name, Source RFC Destination and Target RFC Destination is blank or not
+
+  IF p_pck IS NOT INITIAL.
+
+    IF s_pkg IS NOT INITIAL.
+
+      LOOP AT s_pkg ASSIGNING <lfs_pkg>.
+        IF <lfs_pkg> IS ASSIGNED.
+          IF <lfs_pkg>-low CA '*\{}[];:<>,)(*&^%$#@!'.
+            MESSAGE 'Package cannot have special characters' TYPE 'E'.
+          ENDIF. "<lfs_pkg>-low CA '*/\{}[];:<>,)(*&^%$#@!'.
+        ENDIF."<lfs_pkg> IS ASSIGNED
+      ENDLOOP. "s_pkg ASSIGNING <lfs_pkg>.
+
+      SELECT devclass
+        FROM tdevc
+        INTO TABLE lit_package
+        WHERE devclass IN s_pkg.
+      IF sy-subrc NE 0.
+        MESSAGE 'Enter Correct Package Name' TYPE 'E'." DISPLAY LIKE 'E'.
+      ENDIF.
+
+      IF sy-ucomm EQ space OR sy-ucomm EQ 'ONLI'.
+
+        IF s_pkg IS INITIAL.
+          MESSAGE TEXT-030 TYPE 'E'." DISPLAY LIKE 'E'.
+        ENDIF. "s_pkg IS NOT INITIAL
+*Source RFC Destination
+        IF p_csrfc IS INITIAL.
+          MESSAGE TEXT-028 TYPE 'E'." DISPLAY LIKE 'E'.
+        ENDIF.
+*Target RFC Destination
+        IF s_ctrfc IS INITIAL.
+          MESSAGE TEXT-029 TYPE 'E' ."DISPLAY LIKE 'E'.
+        ENDIF.
+
+      ENDIF. "sy-ucomm EQ 'ONLI'.
+
+    ENDIF. "s_pkg IS NOT INITIAL.
+
+  ENDIF. "p_pck IS NOT INITIAL
+
+*Validate RFC Destinations
+
+  IF p_csrfc IS NOT INITIAL.
+
+*    TRANSLATE p_csrfc TO UPPER CASE.
+
+    SELECT rfcdest rfctype
+      FROM rfcdes
+      INTO TABLE lit_rfcdest
+      WHERE rfcdest EQ p_csrfc AND rfctype = c_abap_conn.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-026 TYPE 'E'. "DISPLAY LIKE 'E'.
+    ENDIF.
+
+  ENDIF."p_csrfc IS NOT INITIAL.
+
+*Validate RFC Destinations
+
+  IF s_ctrfc IS NOT INITIAL.
+
+*        TRANSLATE p_ctrfc TO UPPER CASE.
+
+    LOOP AT s_ctrfc ASSIGNING <lfs_ctrfc>.
+      TRANSLATE <lfs_ctrfc>-low TO UPPER CASE.
+    ENDLOOP."s_ctrfc ASSIGNING <lfs_ctrfc>
+
+    SELECT rfcdest rfctype
+      FROM rfcdes
+      INTO TABLE lit_rfcdest
+      WHERE rfcdest IN s_ctrfc AND rfctype EQ c_abap_conn.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-026 TYPE 'E'. "DISPLAY LIKE 'E'.
+    ENDIF.
+
+  ENDIF. "p_ctrfc IS NOT INITIAL.
+
+ENDFORM.                    " Z_VALIDATE_CODECOMP
+*&---------------------------------------------------------------------*
+*&      Form  Z_OUTPUT_ALV_SC
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_LIT_CONOP  text
+*----------------------------------------------------------------------*
+FORM z_output_alv_sc  TABLES   fp_it_final TYPE table.
+  DATA : lwa_layout   TYPE lvc_s_layo.
+
+  DATA: lv_repid       TYPE sy-repid.
+
+  CONSTANTS: lc_field TYPE slis_fieldname VALUE 'LINE_COLOR',
+             lc_usr   TYPE slis_formname VALUE 'Z_USER_COMMAND',
+             lc_top   TYPE slis_formname VALUE 'Z_TOP_OF_PAGE'.
+
+  lwa_layout-stylefname = 'STYLE'.
+  lwa_layout-zebra      = c_x.
+  lwa_layout-cwidth_opt = c_x.
+
+  lv_repid = sy-repid.
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY_LVC'
+    EXPORTING
+      i_callback_program      = lv_repid
+      i_callback_user_command = lc_usr
+      i_callback_top_of_page  = lc_top
+      is_layout_lvc           = lwa_layout
+      it_fieldcat_lvc         = it_fcatn
+      it_sort_lvc             = it_sortn
+      i_save                  = c_x
+    TABLES
+      t_outtab                = fp_it_final
+    EXCEPTIONS
+      program_error           = 1
+      OTHERS                  = 2.
+  .
+  IF sy-subrc <> 0.
+
+  ENDIF.
+
+ENDFORM.                    " Z_OUTPUT_ALV_SC
+*&---------------------------------------------------------------------*
+*&      Form  Z_FIELDCAT_SC
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_2952   text
+*      -->P_2953   text
+*      -->P_2954   text
+*      -->P_18     text
+*      -->P_C_X  text
+*      -->P_SPACE  text
+*----------------------------------------------------------------------*
+FORM z_fieldcat_sc  USING     fp_field TYPE slis_fieldname
+                              fp_text  TYPE dd03p-scrtext_l
+                              fp_tab   TYPE slis_tabname
+                              fp_len   TYPE dd03p-outputlen
+                              fp_zer   TYPE char1
+                              fp_hot   TYPE char1.
+  DATA :  lwa_fcatn       TYPE lvc_s_fcat.
+
+  lwa_fcatn-fieldname = fp_field.
+  lwa_fcatn-tabname   = fp_tab.
+  lwa_fcatn-scrtext_l   = fp_text.
+  lwa_fcatn-outputlen = fp_len.
+  lwa_fcatn-no_zero   = fp_zer.
+  lwa_fcatn-hotspot   = fp_hot.
+
+  APPEND lwa_fcatn TO it_fcatn.
+  CLEAR lwa_fcatn.
+
+ENDFORM.                    " Z_FIELDCAT_SC
+
+
+
